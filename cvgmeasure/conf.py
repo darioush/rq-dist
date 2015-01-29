@@ -2,7 +2,7 @@
 REDIS_PREFIX = 'results'
 REDIS_URL_RQ = 'redis://monarch.cs.washington.edu:6379/0'
 
-SCHOOL = set(('monarch', 'recycle', 'bicycle', 'tricycle'))
+SCHOOL = set(('monarch', 'recycle', 'bicycle', 'tricycle', 'godwit'))
 DEFAULT = object()
 
 config = {
@@ -61,6 +61,11 @@ workers = {
         'tricycle': {
             'hostname': 'tricycle.cs.washington.edu',
             'rqdir': '/scratch/darioush/yolo/rq',
+        },
+
+        'godwit': {
+            'hostname': 'godwit.cs.washington.edu',
+            'rqdir': '/scratch/darioush/rq',
         },
 }
 
