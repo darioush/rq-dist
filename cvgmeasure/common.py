@@ -53,7 +53,8 @@ def job_decorator(f):
             else:
                 f_in = json.loads(input)
                 for worker in Worker.all():
-                    if worker.get_current_job().id == job.id:
+                    if worker.get_current_job() and \
+                            (worker.get_current_job().id == job.id):
                         hostname, _, _pid = worker.name.partition('.')
                         pid = int(_pid)
                         break
