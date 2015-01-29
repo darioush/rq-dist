@@ -2,3 +2,4 @@
 *.pyo
 env/
 nohup.*
+*.swp

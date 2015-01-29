@@ -1,5 +1,6 @@
 
 REDIS_PREFIX = 'results'
+REDIS_URL_RQ = 'redis://monarch.cs.washington.edu:6379/0'
 
 SCHOOL = set(('monarch', 'recycle', 'bicycle', 'tricycle'))
 DEFAULT = object()
@@ -38,6 +39,14 @@ config = {
             DEFAULT, None, 'redis://monarch.cs.washington.edu:6379/1'
         )
     ],
+
+}
+
+workers = {
+        'monarch': {
+            'hostname': 'monarch.cs.washington.edu',
+            'rqdir': '/homes/gws/darioush/rq',
+        },
 }
 
 def get_property(property, hostname, pid):
