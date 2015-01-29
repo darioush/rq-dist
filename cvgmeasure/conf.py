@@ -60,7 +60,7 @@ workers = {
 
         'tricycle': {
             'hostname': 'tricycle.cs.washington.edu',
-            'rqdir': '/scratch/darioush/rq',
+            'rqdir': '/scratch/darioush/yolo/rq',
         },
 }
 

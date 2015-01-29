@@ -123,3 +123,12 @@ def check_key(r, key, bundle, redo=False, other_keys=[]):
 
 class DuplicateBundleAttempt(Exception):
     pass
+
+PROJECTS = ['Lang', 'Chart', 'Math', 'Closure', 'Time']
+
+def get_num_bugs(project):
+    if not project in PROJECTS:
+        raise Exception("Bad project")
+    return int(d4()('info', '-p', project, '-c').rstrip())
+
+

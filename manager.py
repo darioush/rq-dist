@@ -79,10 +79,11 @@ def killall(machine):
         kill(worker)
 
 def kill(worker):
+    machine, _, pid = worker.name.partition('.')
     rem = SshMachine(workers[machine]['hostname'])
-    machine, _, pid = worker.partition('.')
     try:
-        rem['kill'](_pid)
+        rem['kill'](pid)
+        print "Killed %s" % worker.name
     except:
         print "WARNING:: Couldn't kill %s" % worker.name
 
