@@ -91,8 +91,10 @@ def test_cvg_bundle(input, hostname, pid):
                     for tc, progress_callback in worklist:
                         print tc
                         try:
-                            result = get_coverage(cvg_tool, 'reset')
-                            assert result['lc'] == 0 # make sure result of reset is successful
+                            print "reset"
+                            results = get_coverage(cvg_tool, 'reset')
+                            print results
+                            assert results['lc'] == 0 # make sure result of reset is successful
 
                             results = get_coverage(cvg_tool, tc)
                             print results
