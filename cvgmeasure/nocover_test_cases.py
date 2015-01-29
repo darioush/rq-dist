@@ -89,13 +89,13 @@ def test_cvg_bundle(input, hostname, pid):
                 with checkout(project, version, local.path(work_dir) / 'checkout'):
                     d4()('compile')
                     for tc, progress_callback in worklist:
-                        print tc
                         try:
                             print "reset"
                             results = get_coverage(cvg_tool, 'reset')
                             print results
                             assert results['lc'] == 0 # make sure result of reset is successful
 
+                            print tc
                             results = get_coverage(cvg_tool, tc)
                             print results
                             put_into_hash(r, 'test-classes-cvg', [cvg_tool, project, version], tc,
