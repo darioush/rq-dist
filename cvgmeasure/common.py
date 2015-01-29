@@ -7,6 +7,7 @@ from rq import get_current_job, Worker
 from cStringIO import StringIO
 from plumbum import local
 from plumbum.cmd import rm, mkdir, ls
+from rq.job import NoSuchJobError
 
 from cvgmeasure.conf import REDIS_PREFIX
 
@@ -54,11 +55,14 @@ def job_decorator(f):
             else:
                 f_in = json.loads(input)
                 for worker in Worker.all():
-                    if worker.get_current_job() and \
-                            (worker.get_current_job().id == job.id):
-                        hostname, _, _pid = worker.name.partition('.')
-                        pid = int(_pid)
-                        break
+                    try:
+                        if worker.get_current_job() and \
+                                (worker.get_current_job().id == job.id):
+                            hostname, _, _pid = worker.name.partition('.')
+                            pid = int(_pid)
+                            break
+                    except NoSuchJobError:
+                        continue
                 else:
                     raise Exception("Could not find worker for job: %s" % job.id)
             return f(f_in, hostname, pid, *args, **kwargs)
