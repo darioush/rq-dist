@@ -1,4 +1,5 @@
 import os
+import json
 import socket
 
 from plumbum import local
@@ -7,8 +8,10 @@ from contextlib import contextmanager
 from redis import StrictRedis
 
 from cvgmeasure.common import job_decorator, check_key, add_to_path, checkout
-from cvgmeasure.common import d4, checkout, refresh_dir
-from cvgmeasure.common import put_list
+from cvgmeasure.common import filter_key_list
+from cvgmeasure.common import d4, checkout, refresh_dir, get_coverage
+from cvgmeasure.common import put_list, put_into_hash
+from cvgmeasure.common import get_coverage_files_to_save, get_tar_gz_str
 from cvgmeasure.conf import get_property
 
 
@@ -31,7 +34,7 @@ def test_lists(input, hostname, pid):
             redo=redo,
             other_keys=['test-methods', 'test-classes']
     ):
-        with refresh_dir(work_dir, cleanup=False):
+        with refresh_dir(work_dir, cleanup=True):
             with add_to_path(d4j_path):
                 with checkout(project, version, local.path(work_dir) / 'checkout'):
                     d4()('compile')
@@ -73,8 +76,27 @@ def test_cvg_bundle(input, hostname, pid):
 
     r = StrictRedis.from_url(redis_url)
 
-    with refresh_dir(work_dir, cleanup=False):
-        with add_to_path(d4j_path):
-            with checkout(project, version, local.path(work_dir) / 'checkout'):
-                d4()('compile')
-                print "Hi"
+    with filter_key_list(
+            r,
+            key='test-classes-checked-for-emptiness',
+            bundle=[cvg_tool, project, version],
+            list=test_classes,
+            redo=redo,
+            other_keys=['test-classes-cvg', 'test-classes-cvg-files', 'test-classes-cvg-nonempty'],
+    ) as worklist:
+        with refresh_dir(work_dir, cleanup=True):
+            with add_to_path(d4j_path):
+                with checkout(project, version, local.path(work_dir) / 'checkout'):
+                    d4()('compile')
+                    for tc in worklist:
+                        print tc
+                        results = get_coverage(cvg_tool, tc)
+                        print results
+                        files = get_tar_gz_str(get_coverage_files_to_save(cvg_tool))
+                        put_into_hash(r, 'test-classes-cvg', [cvg_tool, project, version], tc,
+                                json.dumps(results))
+                        put_into_hash(r, 'test-classes-cvg-files', [cvg_tool, project, version], tc,
+                                files)
+                        put_into_hash(r, 'test-classes-cvg-nonempty', [cvg_tool, project, version], tc,
+                                1 if results['lc'] > 0 else None)
+
