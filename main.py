@@ -5,9 +5,8 @@ import importlib
 from rq import Queue
 from redis import StrictRedis
 
-from cvgmeasure.work import main
-from cvgmeasure.common import get_num_bugs, PROJECTS
-from cvgmeasure.conf import REDIS_URL_RQ
+from cvgmeasure.common import get_num_bugs, PROJECTS, mk_key
+from cvgmeasure.conf import REDIS_URL_RQ, get_property
 
 def get_fun(fun_dotted):
     module_name = '.'.join(fun_dotted.split('.')[:-1])
@@ -41,6 +40,14 @@ def enqueue_bundles(fun_dotted, additional_jsons, queue_name='default',
                     timeout=timeout
                 )
 
+def enqueue_bundles_sliced(fun_dotted, additional_jsons, queue_name='default',
+        timeout=180, bundle_size=10):
+    q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
+    r = StrictRedis.from_url(get_property('redis_url'))
+    for project in PROJECTS:
+        for i in xrange(1, get_num_bugs(project) + 1):
+            key = mk_key('test-classes', [project, i])
+            print r.llen(key)
 
 if __name__ == "__main__":
     if sys.argv[1] == 'single':
@@ -50,3 +57,6 @@ if __name__ == "__main__":
 
     if sys.argv[1] == 'qb':
         enqueue_bundles(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))
+
+    if sys.argv[1] == 'qb-slice':
+        enqueue_bundles_sliced(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]), int(sys.argv[6]))

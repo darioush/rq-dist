@@ -57,3 +57,24 @@ def test_lists(input, hostname, pid):
 
     return "Success"
 
+
+@job_decorator
+def test_cvg_bundle(input, hostname, pid):
+    project = input['project']
+    version = input['version']
+    cvg_tool = input['cvg_tool']
+    redo    = input.get('redo', False)
+    test_classes = input['test_classes']
+
+    work_dir, d4j_path, redis_url = map(
+            lambda property: get_property(property, hostname, pid),
+            ['work_dir', 'd4j_path', 'redis_url']
+    )
+
+    r = StrictRedis.from_url(redis_url)
+
+    with refresh_dir(work_dir, cleanup=False):
+        with add_to_path(d4j_path):
+            with checkout(project, version, local.path(work_dir) / 'checkout'):
+                d4()('compile')
+                print "Hi"

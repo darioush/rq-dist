@@ -64,7 +64,7 @@ workers = {
         },
 }
 
-def get_property(property, hostname, pid):
+def get_property(property, hostname=None, pid=None):
     for (group, fn, default) in config.get(property, []):
         if group is DEFAULT or hostname in group:
             if fn is not None and (hostname or pid):
