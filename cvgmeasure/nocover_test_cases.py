@@ -100,8 +100,9 @@ def test_cvg_bundle(input, hostname, pid):
 
                             progress_callback()
                         finally:
+                            file_list = get_coverage_files_to_save(cvg_tool)
                             try:
-                                files = get_tar_gz_str(get_coverage_files_to_save(cvg_tool))
+                                files = get_tar_gz_str(file_list)
                                 put_into_hash(r, 'test-classes-cvg-files', [cvg_tool, project, version], tc,
                                     files)
                             except:

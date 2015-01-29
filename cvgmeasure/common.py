@@ -208,7 +208,9 @@ def get_coverage(cvg_tool, tc):
 
 def get_coverage_files_to_save(cvg_tool):
     return {
-            'cobertura': ['cobertura.ser', 'coverage/'],
+        'cobertura': ['cobertura.ser', 'coverage/'],
+        'codecover': ['coverage/'],
+        'jmockit'  : ['coverage/'],
     }[cvg_tool]
 
 
