@@ -45,7 +45,22 @@ config = {
 workers = {
         'monarch': {
             'hostname': 'monarch.cs.washington.edu',
-            'rqdir': '/homes/gws/darioush/rq',
+            'rqdir': '/scratch/darioush/rq',
+        },
+
+        'recycle': {
+            'hostname': 'recycle.cs.washington.edu',
+            'rqdir': '/scratch/darioush/rq',
+        },
+
+        'bicycle': {
+            'hostname': 'bicycle.cs.washington.edu',
+            'rqdir': '/scratch/darioush/rq',
+        },
+
+        'tricycle': {
+            'hostname': 'tricycle.cs.washington.edu',
+            'rqdir': '/scratch/darioush/rq',
         },
 }
 

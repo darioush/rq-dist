@@ -13,6 +13,11 @@ def is_local(m, worker):
     machine, _, _ = worker.partition('.')
     return machine == m
 
+def teardown(machine):
+    rem = SshMachine(workers[machine]['hostname'])
+    dir = rem.path(workers[machine]['rqdir'])
+    print "REMOVING DIR.."
+    rem["rm"]("-rf", dir)
 
 def setup(machine):
     rem = SshMachine(workers[machine]['hostname'])
@@ -32,6 +37,14 @@ def setup(machine):
         print "UPDATING VENV ..."
         rem["./update-venv.sh"]()
 
+def showall():
+    r = StrictRedis.from_url(REDIS_URL_RQ)
+    machine_workers = [worker for worker in Worker.all(connection=r)]
+
+    print "%d workers running on total" % (len(machine_workers),)
+    if len(machine_workers):
+        print '\n'.join(map(lambda m: "%s\t%s" % (m.name, m.get_state()),
+            machine_workers))
 
 def main(machine, instances):
     r = StrictRedis.from_url(REDIS_URL_RQ)
@@ -40,8 +53,9 @@ def main(machine, instances):
             if is_local(machine, worker.name)]
 
     print "%d workers running on %s" % (len(machine_workers), machine)
-    print '\n'.join(map(lambda m: "%s\t%s" % (m.name, m.get_state()),
-        machine_workers))
+    if len(machine_workers):
+        print '\n'.join(map(lambda m: "%s\t%s" % (m.name, m.get_state()),
+            machine_workers))
 
     rem = SshMachine(workers[machine]['hostname'])
     dir = rem.path(workers[machine]['rqdir'])
@@ -61,15 +75,19 @@ def killall(machine):
     idle_workers = [worker for worker in machine_workers
             if worker.get_state() == 'idle']
 
-    rem = SshMachine(workers[machine]['hostname'])
-
     for worker in idle_workers:
-        machine, _, _pid = worker.name.partition('.')
-        try:
-            rem['kill'](_pid)
-        except:
-            print "WARNING:: Couldn't kill %s" % worker.name
+        kill(worker)
 
+def kill(worker):
+    rem = SshMachine(workers[machine]['hostname'])
+    machine, _, pid = worker.partition('.')
+    try:
+        rem['kill'](_pid)
+    except:
+        print "WARNING:: Couldn't kill %s" % worker.name
+
+def listhosts():
+    print '\n'.join(workers.keys())
 
 if __name__ == "__main__":
     if sys.argv[1] == 'spawn':
@@ -78,5 +96,21 @@ if __name__ == "__main__":
     if sys.argv[1] == 'setup':
         setup(sys.argv[2])
 
+    if sys.argv[1] == 'teardown':
+        teardown(sys.argv[2])
+
     if sys.argv[1] == 'killall':
         killall(sys.argv[2])
+
+    if sys.argv[1] == 'kill':
+        killall(sys.argv[2])
+
+    if sys.argv[1] == 'info':
+        main(sys.argv[2], 0)
+
+    if sys.argv[1] == 'showall':
+        showall()
+
+    if sys.argv[1] == 'listhosts':
+        listhosts()
+
