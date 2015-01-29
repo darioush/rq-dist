@@ -3,4 +3,4 @@
 set -e
 
 source env/bin/activate
-nohup rqworker &
+nohup rqworker >/dev/null 2>&1 &
