@@ -156,15 +156,15 @@ def filter_key_list(r, key, bundle, list, redo=False, other_keys=[]):
         worklist = list
     else:
         worklist = filtered_list
-    yield worklist
 
     job = get_current_job()
     if job:
         done_by = job.id
     else:
         done_by = 1
-    for item in worklist:
-        r.hset(_key, item, done_by)
+
+    yield zip(worklist, [lambda my_item=item: r.hset(_key, my_item, done_by) for item in worklist])
+
 
 
 

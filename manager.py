@@ -76,16 +76,16 @@ def killall(machine):
             if worker.get_state() == 'idle']
 
     for worker in idle_workers:
-        kill(worker)
+        kill(worker.name)
 
 def kill(worker):
-    machine, _, pid = worker.name.partition('.')
+    machine, _, pid = worker.partition('.')
     rem = SshMachine(workers[machine]['hostname'])
     try:
         rem['kill'](pid)
-        print "Killed %s" % worker.name
+        print "Killed %s" % worker
     except:
-        print "WARNING:: Couldn't kill %s" % worker.name
+        print "WARNING:: Couldn't kill %s" % worker
 
 def listhosts():
     print '\n'.join(workers.keys())
@@ -104,7 +104,7 @@ if __name__ == "__main__":
         killall(sys.argv[2])
 
     if sys.argv[1] == 'kill':
-        killall(sys.argv[2])
+        kill(sys.argv[2])
 
     if sys.argv[1] == 'info':
         main(sys.argv[2], 0)

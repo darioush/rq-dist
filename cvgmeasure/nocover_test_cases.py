@@ -88,15 +88,22 @@ def test_cvg_bundle(input, hostname, pid):
             with add_to_path(d4j_path):
                 with checkout(project, version, local.path(work_dir) / 'checkout'):
                     d4()('compile')
-                    for tc in worklist:
+                    for tc, progress_callback in worklist:
                         print tc
-                        results = get_coverage(cvg_tool, tc)
-                        print results
-                        files = get_tar_gz_str(get_coverage_files_to_save(cvg_tool))
-                        put_into_hash(r, 'test-classes-cvg', [cvg_tool, project, version], tc,
-                                json.dumps(results))
-                        put_into_hash(r, 'test-classes-cvg-files', [cvg_tool, project, version], tc,
-                                files)
-                        put_into_hash(r, 'test-classes-cvg-nonempty', [cvg_tool, project, version], tc,
-                                1 if results['lc'] > 0 else None)
+                        try:
+                            results = get_coverage(cvg_tool, tc)
+                            print results
+                            put_into_hash(r, 'test-classes-cvg', [cvg_tool, project, version], tc,
+                                    json.dumps(results))
+                            put_into_hash(r, 'test-classes-cvg-nonempty', [cvg_tool, project, version], tc,
+                                    1 if results['lc'] > 0 else None)
+
+                            progress_callback()
+                        finally:
+                            try:
+                                files = get_tar_gz_str(get_coverage_files_to_save(cvg_tool))
+                                put_into_hash(r, 'test-classes-cvg-files', [cvg_tool, project, version], tc,
+                                    files)
+                            except:
+                                pass
 
