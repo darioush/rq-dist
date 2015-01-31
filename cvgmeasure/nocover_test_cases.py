@@ -26,7 +26,7 @@ def test_lists(input, hostname, pid):
             ['work_dir', 'd4j_path', 'redis_url']
     )
 
-    work_dir_path = local.path(work_dir)
+    work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
 
     r = StrictRedis.from_url(redis_url)
     with check_key(
@@ -76,6 +76,8 @@ def test_cvg_bundle(input, hostname, pid):
             ['work_dir', 'd4j_path', 'redis_url']
     )
 
+    work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
+
     r = StrictRedis.from_url(redis_url)
 
     with filter_key_list(
@@ -86,9 +88,9 @@ def test_cvg_bundle(input, hostname, pid):
             redo=redo,
             other_keys=['test-classes-cvg', 'test-classes-cvg-files', 'test-classes-cvg-nonempty'],
     ) as worklist:
-        with refresh_dir(work_dir, cleanup=True):
+        with refresh_dir(work_dir_path, cleanup=True):
             with add_to_path(d4j_path):
-                with checkout(project, version, local.path(work_dir) / 'checkout'):
+                with checkout(project, version, work_dir_path / 'checkout'):
                     d4()('compile')
                     for tc, progress_callback in worklist:
                         try:
