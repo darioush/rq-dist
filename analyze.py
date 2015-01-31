@@ -7,7 +7,7 @@ def main():
     r = redis.StrictRedis.from_url(get_property('redis_url'))
     tools = ['cobertura', 'codecover', 'jmockit']
 
-    project, version = "Chart", 1
+    project, version = "Chart", 3
 
     all_classes = r.lrange(':'.join(['results', 'test-classes', project, str(version)]), 0, -1)
 

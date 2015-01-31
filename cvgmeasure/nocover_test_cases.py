@@ -26,6 +26,8 @@ def test_lists(input, hostname, pid):
             ['work_dir', 'd4j_path', 'redis_url']
     )
 
+    work_dir_path = local.path(work_dir)
+
     r = StrictRedis.from_url(redis_url)
     with check_key(
             r,
@@ -34,9 +36,9 @@ def test_lists(input, hostname, pid):
             redo=redo,
             other_keys=['test-methods', 'test-classes']
     ):
-        with refresh_dir(work_dir, cleanup=True):
+        with refresh_dir(work_dir_path, cleanup=True):
             with add_to_path(d4j_path):
-                with checkout(project, version, local.path(work_dir) / 'checkout'):
+                with checkout(project, version, work_dir_path / 'checkout'):
                     d4()('compile')
                     test_methods = d4()('list-tests').rstrip().split('\n')
                     # uniq
