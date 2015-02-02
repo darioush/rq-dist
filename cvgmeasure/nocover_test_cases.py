@@ -14,6 +14,15 @@ from cvgmeasure.d4 import d4, checkout, refresh_dir, get_coverage
 from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_str, add_to_path
 
 
+def test_list_special_case(tc):
+    cl, _, method = tc.partition('::')
+    if 'org.joda.time.chrono.gj.MainTest' == cl:
+        classes = ['edu.washington.cs.testfixer.time.GjMainTest' + suffix for suffix in ('1', '2')]
+        return ['%s::%s' % (c, method) for c in classes]
+
+    return [tc]
+
+
 @job_decorator
 def test_lists(input, hostname, pid):
     project = input['project']
@@ -39,7 +48,10 @@ def test_lists(input, hostname, pid):
             with add_to_path(d4j_path):
                 with checkout(project, version, work_dir_path / 'checkout'):
                     d4()('compile')
-                    test_methods = d4()('list-tests').rstrip().split('\n')
+                    test_methods = reduce(
+                        lambda a,b: a+b,
+                        map(test_list_special_case, d4()('list-tests').rstrip().split('\n'))
+                    )
                     # uniq
                     test_classes_seen = set()
                     def uniq(test_class):

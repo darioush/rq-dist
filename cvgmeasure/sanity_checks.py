@@ -6,7 +6,7 @@ from redis import StrictRedis
 
 from cvgmeasure.conf import get_property
 from cvgmeasure.common import job_decorator, mk_key
-from cvgmeasure.d4 import d4, refresh_dir, add_to_path, checkout
+from cvgmeasure.d4 import d4, refresh_dir, add_to_path, checkout, test
 
 
 class SubMismatch(Exception):
@@ -16,6 +16,9 @@ class LenMismatch(Exception):
     pass
 
 class DupMismatch(Exception):
+    pass
+
+class TestFail(Exception):
     pass
 
 def no_dups(it1, label1):
@@ -55,18 +58,36 @@ def method_list_matches(input, hostname, pid):
                 d4()('compile')
                 test_methods_from_d4 = d4()('list-tests').rstrip().split('\n')
                 with local.env(SUCCESS_OUT="passing-tests.txt"):
-                    d4()('test')
+                    failing_tests = test()
+
                     with open("passing-tests.txt") as f:
                         test_methods_from_run = [x[len('--- '):] for x in f.read().rstrip().split('\n')]
                     with open("count-of-tests.txt") as f:
                         per_run_counts = [int(line.rstrip()) for line in f]
-                        print "Number of processes run to test: %d" % len(per_run_counts)
                         count_of_tests_from_run = sum(per_run_counts)
+
+
+                if project == 'Lang' and version >= 37:
+                    ## In this case, we know that some tests may fail
+                    expected_fails = [method for method in failing_tests if
+                            method.startswith('org.apache.commons.lang.builder.ToStringBuilderTest')]
+                    single_run_fails = test(['-t', 'org.apache.commons.lang.builder.ToStringBuilderTest'])
+                    assert len(single_run_fails) == 0
+                else:
+                    expected_fails = []
+
+                unexpected_fails = [method for method in failing_tests if method not in expected_fails]
+
+    # Sanity check #0 -- check out the test fails
+    if len(unexpected_fails) > 0:
+        raise TestFail(' '.join(unexpected_fails))
 
     # Sanity check #1 -- number of tests counted through the runner should equal
     #                    the length of the list of passing tests the runner outputs
-    if len(test_methods_from_d4) != count_of_tests_from_run:
-        raise LenMismatch("Test methods from d4 don't match counter")
+    num_tests = len(test_methods_from_d4)
+    if num_tests != count_of_tests_from_run:
+        raise LenMismatch("Test methods from d4 (%d) don't match counter (%d)" %
+                (num_tests, count_of_tests_from_run))
 
     # Sanity check #2 -- we should not be running duplicate tests
     no_dups(test_methods_from_run, 'test methods from run')
@@ -102,4 +123,6 @@ def method_list_matches(input, hostname, pid):
         test_methods_from_redis = r.lrange(key, 0, -1)
 
     check_eq(test_methods_from_redis, 'test methods from redis', test_methods_from_d4, 'test methods from d4')
+
+    return "Success"
 
