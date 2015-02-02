@@ -4,15 +4,14 @@ import socket
 
 from plumbum import local
 from plumbum.cmd import rm, mkdir, ls
-from contextlib import contextmanager
 from redis import StrictRedis
 
-from cvgmeasure.common import job_decorator, check_key, add_to_path, checkout
-from cvgmeasure.common import filter_key_list
-from cvgmeasure.common import d4, checkout, refresh_dir, get_coverage
+from cvgmeasure.common import job_decorator
+from cvgmeasure.common import check_key, filter_key_list
 from cvgmeasure.common import put_list, put_into_hash
-from cvgmeasure.common import get_coverage_files_to_save, get_tar_gz_str
 from cvgmeasure.conf import get_property
+from cvgmeasure.d4 import d4, checkout, refresh_dir, get_coverage
+from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_str, add_to_path
 
 
 @job_decorator

@@ -10,6 +10,13 @@ from optparse import OptionParser
 
 from cvgmeasure.conf import REDIS_URL_RQ
 
+class DummyQ(object):
+    def enqueue_job(self, job):
+        print "DummyQ not enqueuing:", job.id
+
+    def __str__(self):
+        return "DummyQ"
+
 def _requeue(r, fq, job_id, to_q, timeout=None, action=False):
         """Requeues the job with the given job ID."""
         try:
@@ -20,7 +27,9 @@ def _requeue(r, fq, job_id, to_q, timeout=None, action=False):
             return
         print job.exc_info
 
-        if to_q:
+        if to_q and to_q == 'dummy':
+            q = DummyQ()
+        elif to_q:
             q = Queue(to_q, connection=r)
         else:
             q = Queue(job.origin, connection=r)
@@ -67,6 +76,22 @@ def list_timeouts(options):
     for job, to in timeouted_jobs:
         print "%s\t\ttimeouted at: %d" % (job.id, to)
 
+def list_regexp(options):
+    r = redis.StrictRedis.from_url(REDIS_URL_RQ)
+    fq = get_failed_queue(connection=r)
+    def get_timeout(job):
+        reason = job.exc_info.split('\n')[-2:-1]
+        for r in reason:
+            match = re.search(options.regexp, r)
+            if match:
+                return True
+        return False
+
+    jobs = fq.get_jobs()
+    timeouted_jobs = [job for job in jobs if get_timeout(job)]
+
+    for job in timeouted_jobs:
+        print job.id
 
 
 if __name__ == "__main__":
@@ -74,8 +99,9 @@ if __name__ == "__main__":
     parser.add_option("-q", "--queue", dest="to_q", action="store", type="string", default="default")
     parser.add_option("-t", "--timeout", dest="timeout", action="store", type="int", default=None)
     parser.add_option("-j", "--job", dest="job", action="store", type="string", default=None)
-    parser.add_option("-a", "--action", dest="action", action="store_true", default=False)
+    parser.add_option("-a", "--commit", dest="action", action="store_true", default=False)
     parser.add_option("-l", "--list-timeouts", dest="list", action="store_true", default=False)
+    parser.add_option("-g", "--list-regexp", dest="regexp", action="store", default=None)
 
     (options, args) = parser.parse_args(sys.argv[1:])
 
@@ -84,4 +110,7 @@ if __name__ == "__main__":
 
     if options.list:
         list_timeouts(options)
+
+    if options.regexp:
+        list_regexp(options)
 

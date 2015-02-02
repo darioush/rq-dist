@@ -1,12 +1,9 @@
 import json
-import re
 import sys
 
 from contextlib import contextmanager
 from rq import get_current_job, Worker
 from cStringIO import StringIO
-from plumbum import local
-from plumbum.cmd import rm, mkdir, ls
 from rq.job import NoSuchJobError
 
 from cvgmeasure.conf import REDIS_PREFIX
@@ -21,8 +18,6 @@ class Tee(object):
 
     def isatty(self):
         return True
-
-
 
 @contextmanager
 def redirect_stdio():
@@ -68,35 +63,6 @@ def job_decorator(f):
             return f(f_in, hostname, pid, *args, **kwargs)
     return decorated
 
-
-@contextmanager
-def refresh_dir(dir, cleanup=True):
-    rm('-rf', dir)
-    mkdir('-p', dir)
-    with local.cwd(dir):
-        try:
-            yield
-            if cleanup:
-                rm('-rf', dir)
-        except:
-            raise
-
-@contextmanager
-def add_to_path(l):
-    for item in reversed(l):
-        local.env.path.insert(0, item)
-    yield
-    for _ in l:
-        local.env.path.pop()
-
-def d4():
-    return local['defects4j']
-
-@contextmanager
-def checkout(project, version, to):
-    d4()('checkout', '-p', project, '-v', "%df" % version, '-w', to)
-    with local.cwd(to):
-        yield
 
 def mk_key(key, bundle):
     return ':'.join([REDIS_PREFIX, key] + map(unicode, bundle))
@@ -168,61 +134,4 @@ def filter_key_list(r, key, bundle, list, redo=False, other_keys=[]):
         done_by = 1
 
     yield zip(worklist, [lambda my_item=item: r.hset(_key, my_item, done_by) for item in worklist])
-
-
-
-
-PROJECTS = ['Lang', 'Chart', 'Math', 'Closure', 'Time']
-
-def get_num_bugs(project):
-    if not project in PROJECTS:
-        raise Exception("Bad project")
-    return int(d4()('info', '-p', project, '-c').rstrip())
-
-
-class CoverageCalculationException(Exception):
-    pass
-
-
-def get_coverage(cvg_tool, tc):
-    cvg = d4()['coverage', '-T', cvg_tool, '-t']
-    output = cvg(tc)
-    regexps = {
-            r'Lines total: (\d+)': 'lt',
-            r'Lines covered: (\d+)': 'lc',
-            r'Branches total: (\d+)': 'bt',
-            r'Branches covered: (\d+)': 'bc',
-    }
-    result = {}
-    def update_dict(line, result):
-        for regexp, key in regexps.iteritems():
-            match = re.match(regexp, line)
-            if match:
-                result[key] = int(match.group(1))
-    for line in output.split('\n'):
-        update_dict(line, result)
-    if not all(val in result for val in regexps.values()):
-        raise CoverageCalculationException("Could not calculate coverage for: %s, %s" % (cvg_tool, tc))
-
-    if result['lt'] == 0:
-        raise CoverageCalculationException("Lines Total reported as 0 for: %s, %s" % (cvg_tool, tc))
-
-    return result
-
-
-def get_coverage_files_to_save(cvg_tool):
-    return {
-        'cobertura': ['cobertura.ser', 'coverage/'],
-        'codecover': ['coverage/'],
-        'jmockit'  : ['coverage/'],
-    }[cvg_tool]
-
-
-def get_tar_gz_str(files, out='output.tar.gz'):
-    rm('-rf', out)
-    local['tar']['cfz', out](*files)
-    with open(out) as f:
-        result = f.read()
-    return result
-
 
