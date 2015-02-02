@@ -51,6 +51,7 @@ def method_list_matches(input, hostname, pid):
     test_methods_from_redis = r.lrange(key, 0, -1)
 
     work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
+    print work_dir_path
 
     with refresh_dir(work_dir_path, cleanup=True):
         with add_to_path(d4j_path):
@@ -69,10 +70,15 @@ def method_list_matches(input, hostname, pid):
 
                 if project == 'Lang' and version >= 37:
                     ## In this case, we know that some tests may fail
-                    expected_fails = [method for method in failing_tests if
-                            method.startswith('org.apache.commons.lang.builder.ToStringBuilderTest')]
-                    single_run_fails = test(['-t', 'org.apache.commons.lang.builder.ToStringBuilderTest'])
-                    assert len(single_run_fails) == 0
+                    ## this is really ugly, but I'm doing it.
+                    klass_name = 'org.apache.commons.%s.builder.ToStringBuilderTest' % (
+                            'lang' if version > 39 else 'lang3',
+                    )
+
+                    expected_fails = [method for method in failing_tests if method.startswith(klass_name)]
+                    single_run_fails = test(['-t', klass_name])
+                    if len(single_run_fails) > 0:
+                        raise TestFail('Single run failed: ' + ' '.join(single_run_fails))
                 else:
                     expected_fails = []
 
