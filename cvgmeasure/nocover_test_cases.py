@@ -88,6 +88,7 @@ def test_cvg_bundle(input, hostname, pid):
     )
 
     work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
+    print work_dir_path
 
     r = StrictRedis.from_url(redis_url)
 
