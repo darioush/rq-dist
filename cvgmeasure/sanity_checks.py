@@ -153,3 +153,51 @@ def method_list_matches(input, hostname, pid):
 
     return "Success"
 
+
+
+@job_decorator
+def method_list_matches_class_list(input, hostname, pid):
+    project = input['project']
+    version = input['version']
+
+    work_dir, d4j_path, redis_url = map(
+            lambda property: get_property(property, hostname, pid),
+            ['work_dir', 'd4j_path', 'redis_url']
+    )
+
+    r = StrictRedis.from_url(redis_url)
+    key = mk_key('test-methods', [project, version])
+    test_methods_from_redis = r.lrange(key, 0, -1)
+
+    key2 = mk_key('test-classes', [project, version])
+    test_classes_from_redis = r.lrange(key2, 0, -1)
+
+    # Sanity check #1 -- no dups in test classes
+    no_dups(test_classes_from_redis, 'tcs from redis')
+
+    # Sanity check #2 -- no dups in test methods
+    no_dups(test_methods_from_redis, 'tms from redis')
+
+    tcs_as_according_to_tms = set(tc for tc, _, _ in [tm.partition('::') for tm in test_methods_from_redis])
+
+    # Sanity check #3 -- check that test classes and test methods match
+    #   Preprocess step: We know that these classes were wrongly inserted:
+    #lang_classes = [
+    #    'org.apache.commons.lang3.builder.ReflectionToStringBuilderConcurrencyTest',
+    #    'org.apache.commons.lang3.builder.ReflectionToStringBuilderMutateInspectConcurrencyTest',
+    #]
+    #lang_classes_in_redis = [cl for cl in lang_classes if cl in test_classes_from_redis]
+
+    #for lang_class in lang_classes_in_redis:
+    #    print "Removing %s from redis:" % lang_class
+    #    print r.lrem(key2, 1, lang_class)
+
+    #if lang_classes_in_redis:
+    #    print "Redis store was modified, reloading list before testing"
+    #    test_classes_from_redis = r.lrange(key2, 0, -1)
+
+    check_eq(tcs_as_according_to_tms, 'tcs as according to tms', test_classes_from_redis, 'tcs from redis')
+
+    return "Success"
+
+
