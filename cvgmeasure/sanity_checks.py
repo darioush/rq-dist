@@ -132,22 +132,22 @@ def method_list_matches(input, hostname, pid):
         # Sanity check #6 -- test methods from d4 should match ones in redis
         #
         #   Preprocess step: We know that these methods were wrongly inserted:
-        lang_methods = [
-            'org.apache.commons.lang3.EnumUtilsTest::test_processBitVectors_longClass',
-            'org.apache.commons.lang3.builder.ReflectionToStringBuilderConcurrencyTest::testLinkedList',
-            'org.apache.commons.lang3.builder.ReflectionToStringBuilderConcurrencyTest::testArrayList',
-            'org.apache.commons.lang3.builder.ReflectionToStringBuilderConcurrencyTest::testCopyOnWriteArrayList',
-            'org.apache.commons.lang3.builder.ReflectionToStringBuilderMutateInspectConcurrencyTest::testConcurrency',
-        ]
-        lang_methods_in_redis = [method for method in lang_methods if method in test_methods_from_redis]
+        #lang_methods = [
+        #    'org.apache.commons.lang3.EnumUtilsTest::test_processBitVectors_longClass',
+        #    'org.apache.commons.lang3.builder.ReflectionToStringBuilderConcurrencyTest::testLinkedList',
+        #    'org.apache.commons.lang3.builder.ReflectionToStringBuilderConcurrencyTest::testArrayList',
+        #    'org.apache.commons.lang3.builder.ReflectionToStringBuilderConcurrencyTest::testCopyOnWriteArrayList',
+        #    'org.apache.commons.lang3.builder.ReflectionToStringBuilderMutateInspectConcurrencyTest::testConcurrency',
+        #]
+        #lang_methods_in_redis = [method for method in lang_methods if method in test_methods_from_redis]
 
-        for lang_method in lang_methods_in_redis:
-            print "Removing %s from redis:" % lang_method
-            print r.lrem(key, 1, lang_method)
+        #for lang_method in lang_methods_in_redis:
+        #    print "Removing %s from redis:" % lang_method
+        #    print r.lrem(key, 1, lang_method)
 
-        if lang_methods_in_redis:
-            print "Redis store was modified, reloading list before testing"
-            test_methods_from_redis = r.lrange(key, 0, -1)
+        #if lang_methods_in_redis:
+        #    print "Redis store was modified, reloading list before testing"
+        #    test_methods_from_redis = r.lrange(key, 0, -1)
 
         check_eq(test_methods_from_redis, 'test methods from redis', test_methods_from_d4, 'test methods from d4')
 

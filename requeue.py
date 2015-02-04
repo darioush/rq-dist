@@ -25,6 +25,7 @@ def _requeue(r, fq, job_id, to_q, timeout=None, action=False):
             # Silently ignore/remove this job and return (i.e. do nothing)
             fq.remove(job_id)
             return
+        print job
         print job.exc_info
 
         if to_q and to_q == 'dummy':
@@ -51,11 +52,12 @@ def _requeue(r, fq, job_id, to_q, timeout=None, action=False):
             q.enqueue_job(job)
             print "DONE!"
 
-def requeue(options):
+def requeue(options, job_list=[]):
     r = redis.StrictRedis.from_url(REDIS_URL_RQ)
     fq = get_failed_queue(connection=r)
     print fq
-    _requeue(r, fq, job_id=options.job, to_q=options.to_q, timeout=options.timeout, action=options.action)
+    for job in job_list:
+        _requeue(r, fq, job_id=job, to_q=options.to_q, timeout=options.timeout, action=options.action)
 
 def list_timeouts(options):
     r = redis.StrictRedis.from_url(REDIS_URL_RQ)
@@ -99,14 +101,21 @@ if __name__ == "__main__":
     parser.add_option("-q", "--queue", dest="to_q", action="store", type="string", default="default")
     parser.add_option("-t", "--timeout", dest="timeout", action="store", type="int", default=None)
     parser.add_option("-j", "--job", dest="job", action="store", type="string", default=None)
+    parser.add_option("-J", "--job-file", dest="job_file", action="store", type="string", default=None)
     parser.add_option("-a", "--commit", dest="action", action="store_true", default=False)
     parser.add_option("-l", "--list-timeouts", dest="list", action="store_true", default=False)
     parser.add_option("-g", "--list-regexp", dest="regexp", action="store", default=None)
 
     (options, args) = parser.parse_args(sys.argv[1:])
 
+
+    if options.job_file:
+        with open(options.job_file) as f:
+            job_list = [job.strip() for job in f]
+        requeue(options, job_list)
+
     if options.job:
-        requeue(options)
+        requeue(options, job_list=[options.job])
 
     if options.list:
         list_timeouts(options)
