@@ -1,10 +1,12 @@
 import sys
 import signal
 import os
+import socket
 import plumbum
 from plumbum import SshMachine
+from plumbum import local
 
-from cvgmeasure.conf import workers, REDIS_URL_RQ
+from cvgmeasure.conf import workers, REDIS_URL_RQ, get_property
 from rq import Worker
 from redis import StrictRedis
 
@@ -31,11 +33,32 @@ def setup(machine):
             rem["virtualenv"]("env")
         print "MADE VIRTUAL ENV..."
 
+
     with rem.cwd(dir):
         print "UPDATING CODE ..."
         rem["git"]("pull", "origin", "master")
         print "UPDATING VENV ..."
         rem["./update-venv.sh"]()
+
+    my_hostname, _, _ = socket.gethostname().partition('.')
+
+    if my_hostname == machine:
+        print "Not syncing master worker"
+        return
+
+    my_d4j = '/'.join(get_property('d4j_path', my_hostname, 0)[0].split('/')[:-2])
+    dst_d4j = '/'.join(get_property('d4j_path', machine, 0)[0].split('/')[:-3])
+    print "RSYNCING FOR DEFECTS4J "
+    rsync = local['rsync']['-avz', '--exclude', '.git', '--exclude', 'project_repos'][my_d4j]
+    rsync('%s:%s' % (workers[machine]['hostname'], dst_d4j))
+
+    rem_d4j = rem.path(dst_d4j) / 'defects4j'
+    repos_dir = rem_d4j / 'project_repos'
+    if not repos_dir.exists():
+        with rem.cwd(rem_d4j):
+            print "GETTING REPOSITORIES..."
+            rem['./get-repos.sh']()
+
 
 def showall():
     r = StrictRedis.from_url(REDIS_URL_RQ)

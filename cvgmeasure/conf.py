@@ -2,7 +2,8 @@
 REDIS_PREFIX = 'results'
 REDIS_URL_RQ = 'redis://monarch.cs.washington.edu:6379/0'
 
-SCHOOL = set(('monarch', 'recycle', 'bicycle', 'tricycle', 'godwit'))
+SCHOOL = set(('recycle', 'bicycle', 'tricycle', 'godwit'))
+MONARCH = set(('monarch',))
 DEFAULT = object()
 
 config = {
@@ -24,6 +25,11 @@ config = {
     'd4j_path' : [
         (
             SCHOOL,
+            None,
+            ['/scratch/darioush/defects4j/framework/bin'],
+        ),
+        (
+            MONARCH,
             None,
             ['/homes/gws/darioush/defects4j/framework/bin'],
         ),
