@@ -108,6 +108,8 @@ def test_cvg_bundle(input, hostname, pid):
                     results = get_coverage(cvg_tool, 'reset')
                     print results
                     assert results['lc'] == 0 # make sure result of reset is successful
+                    assert results['bc'] == 0
+                    assert results['lt'] > 0
 
                     for tc, progress_callback in worklist:
                         try:
@@ -117,7 +119,7 @@ def test_cvg_bundle(input, hostname, pid):
                             put_into_hash(r, 'test-classes-cvg', [cvg_tool, project, version], tc,
                                     json.dumps(results))
                             put_into_hash(r, 'test-classes-cvg-nonempty', [cvg_tool, project, version], tc,
-                                    1 if results['lc'] > 0 else None)
+                                    1 if (results['lc'] + results['bc']) > 0 else None)
 
                             progress_callback()
                         finally:
