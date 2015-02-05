@@ -104,13 +104,13 @@ def test_cvg_bundle(input, hostname, pid):
             with add_to_path(d4j_path):
                 with checkout(project, version, work_dir_path / 'checkout'):
                     d4()('compile')
+                    print "reset"
+                    results = get_coverage(cvg_tool, 'reset')
+                    print results
+                    assert results['lc'] == 0 # make sure result of reset is successful
+
                     for tc, progress_callback in worklist:
                         try:
-                            print "reset"
-                            results = get_coverage(cvg_tool, 'reset')
-                            print results
-                            assert results['lc'] == 0 # make sure result of reset is successful
-
                             print tc
                             results = get_coverage(cvg_tool, tc)
                             print results
