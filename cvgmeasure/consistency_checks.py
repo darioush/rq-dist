@@ -1,8 +1,11 @@
 import os
+import tarfile
+import xpath
 
 from plumbum import local
 from plumbum.cmd import rm, mkdir, ls
 from redis import StrictRedis
+from xml.dom.minidom import parse
 
 from cvgmeasure.conf import get_property
 from cvgmeasure.common import job_decorator, mk_key
@@ -44,6 +47,28 @@ def with_fails(fun):
         return [e]
     return []
 
+def plausable_static_field(project, version, t):
+    # TODO: only works locally for now
+    tarpath = local.path('/scratch/darioush/files') / ("cobertura:%s:%d:%s.tar.gz" % (project, version, t))
+    with tarfile.open(str(tarpath)) as tar:
+        f = tar.extractfile('coverage/coverage.xml')
+        tree = parse(f)
+        covered_lines = xpath.find('//method/lines/line[@hits>0]', tree)
+        assert len(covered_lines) > 0
+        covered_line_numbers = [int(node.getAttribute('number')) for node in covered_lines]
+        its_ok = lambda n: n.parentNode.parentNode.getAttribute('name') == '<clinit>' or (
+                            n.parentNode.parentNode.getAttribute('signiture') == '(Ljava/lang/String;I)V'
+                            and
+                            n.parentNode.parentNode.getAttribude('name') == '<init>'
+                            and
+                            n.parentNode.parentNode.parentNode.parentNode.getAttribute('name') ==  'com.google.javascript.jscomp.SourceMap$Format$1'
+                            )
+        result = all(map(its_ok, covered_lines))
+        print result, covered_line_numbers, project, version, t
+        return result
+
+    return False
+
 @job_decorator
 def non_empty_match(input, hostname, pid):
     project = input['project']
@@ -63,19 +88,23 @@ def non_empty_match(input, hostname, pid):
             for tool in ['cobertura', 'codecover', 'jmockit']]
 
 
+    exclude_static_fields = [('Closure', 117), ('Closure', 47)]
+    cobertura_exclude_static_fields = [t for t in cobertura if t not in codecover and t not in jmockit and \
+            (project, version) in exclude_static_fields and plausable_static_field(project, version, t)]
 
+    cobertura = [t for t in cobertura if t not in cobertura_exclude_static_fields]
     core = set(cobertura) & set(codecover) & set(jmockit)
 
     cobertura_, codecover_, jmockit_ = [[t for t in l if t not in core] for l in (cobertura, codecover, jmockit)]
 
-
     print test_classes
-    print len(core)
+    print len(core), "Agreement"
+    print len(cobertura_exclude_static_fields), " Excluded from cobertura"
 
     print "---"
-    print len(cobertura_), cobertura_
-    print len(codecover_), codecover_
-    print len(jmockit_), jmockit_
+    print len(cobertura_), sorted(cobertura_)
+    print len(codecover_), sorted(codecover_)
+    print len(jmockit_), sorted(jmockit_)
 
     fails = []
     fails.extend(with_fails(lambda: check_sub(cobertura, 'cobertura', codecover, 'codecover')))
