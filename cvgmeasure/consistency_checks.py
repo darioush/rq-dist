@@ -53,18 +53,15 @@ def plausable_static_field(project, version, t):
     with tarfile.open(str(tarpath)) as tar:
         f = tar.extractfile('coverage/coverage.xml')
         tree = parse(f)
-        covered_lines = xpath.find('//method/lines/line[@hits>0]', tree)
+        covered_lines_ok = xpath.find('//class/methods/method[@name="<clinit>"]/lines/line[@hits>0]', tree)
+        covered_lines    = xpath.find('//class/methods/method/lines/line[@hits>0]', tree)
         assert len(covered_lines) > 0
-        covered_line_numbers = [int(node.getAttribute('number')) for node in covered_lines]
-        its_ok = lambda n: n.parentNode.parentNode.getAttribute('name') == '<clinit>' or (
-                            n.parentNode.parentNode.getAttribute('signiture') == '(Ljava/lang/String;I)V'
-                            and
-                            n.parentNode.parentNode.getAttribude('name') == '<init>'
-                            and
-                            n.parentNode.parentNode.parentNode.parentNode.getAttribute('name') ==  'com.google.javascript.jscomp.SourceMap$Format$1'
-                            )
-        result = all(map(its_ok, covered_lines))
-        print result, covered_line_numbers, project, version, t
+        covered_line_numbers_ok = [int(node.getAttribute('number')) for node in covered_lines_ok]
+        covered_line_numbers    = [int(node.getAttribute('number')) for node in covered_lines   ]
+
+        result = all(number in covered_line_numbers_ok for number in covered_line_numbers)
+
+        print result, covered_line_numbers, covered_line_numbers_ok, project, version, t
         return result
 
     return False
@@ -88,18 +85,18 @@ def non_empty_match(input, hostname, pid):
             for tool in ['cobertura', 'codecover', 'jmockit']]
 
 
-    exclude_static_fields = [('Closure', 117), ('Closure', 47)]
-    cobertura_exclude_static_fields = [t for t in cobertura if t not in codecover and t not in jmockit and \
-            (project, version) in exclude_static_fields and plausable_static_field(project, version, t)]
+    exclude_static_fields_from = [('Closure', 117), ('Closure', 47)]
+    exclude_static_fields = [t for t in cobertura if t not in codecover and t in jmockit and \
+            (project, version) in exclude_static_fields_from and plausable_static_field(project, version, t)]
 
-    cobertura = [t for t in cobertura if t not in cobertura_exclude_static_fields]
+    cobertura = [t for t in cobertura if t not in exclude_static_fields]
+    jmockit   = [t for t in jmockit   if t not in exclude_static_fields]
     core = set(cobertura) & set(codecover) & set(jmockit)
 
     cobertura_, codecover_, jmockit_ = [[t for t in l if t not in core] for l in (cobertura, codecover, jmockit)]
 
-    print test_classes
-    print len(core), "Agreement"
-    print len(cobertura_exclude_static_fields), " Excluded from cobertura"
+    print test_classes, '/', len(core), "Agreement"
+    print len(exclude_static_fields), " Excluded from jmockit and cobertura as static field initializers"
 
     print "---"
     print len(cobertura_), sorted(cobertura_)
