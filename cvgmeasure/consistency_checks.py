@@ -1,6 +1,7 @@
 import os
 import tarfile
 import xpath
+import re
 
 from plumbum import local
 from plumbum.cmd import rm, mkdir, ls
@@ -48,12 +49,15 @@ def with_fails(fun):
     return []
 
 def plausable_static_field(project, version, t):
+    print "----------------"
     # TODO: only works locally for now
     tarpath = local.path('/scratch/darioush/files') / ("cobertura:%s:%d:%s.tar.gz" % (project, version, t))
     with tarfile.open(str(tarpath)) as tar:
         f = tar.extractfile('coverage/coverage.xml')
         tree = parse(f)
-        covered_lines_ok = xpath.find('//class/methods/method[@name="<clinit>"]/lines/line[@hits>0]', tree)
+        covered_lines_ok_clinit = xpath.find('//class/methods/method[@name="<clinit>"]/lines/line[@hits>0]', tree)
+        covered_lines_ok_init = xpath.find('//class/methods/method[@name="<init>" and @signature="()V"]/lines/line[@hits>0]', tree)
+        covered_lines_ok = covered_lines_ok_clinit + covered_lines_ok_init
         covered_lines    = xpath.find('//class/methods/method/lines/line[@hits>0]', tree)
         assert len(covered_lines) > 0
         covered_line_numbers_ok = [int(node.getAttribute('number')) for node in covered_lines_ok]
@@ -62,6 +66,25 @@ def plausable_static_field(project, version, t):
         result = all(number in covered_line_numbers_ok for number in covered_line_numbers)
 
         print result, covered_line_numbers, covered_line_numbers_ok, project, version, t
+        return result
+
+    return False
+
+def plausable_codecover_field(project, version, t):
+    # TODO: only works locally for now
+    tarpath = local.path('/scratch/darioush/files') / ("codecover:%s:%d:%s.tar.gz" % (project, version, t))
+    with tarfile.open(str(tarpath)) as tar:
+        f = tar.extractfile('coverage/report_html/report_single.html')
+        tree = parse(f)
+        nodes = xpath.find('//span[@class="covered fullyCovered Statement_Coverage"]', tree)
+        covered_line_numbers = [int(xpath.find("td/a/text()", node.parentNode.parentNode)[0].nodeValue) for node in nodes]
+        covered_code = [xpath.find('text()', node)[0].nodeValue for noe in nodes]
+
+        def is_ok(code):
+            return re.match(r'(public|private|)? static (final)? (long) .* = .*;', code) is not None
+
+        result = all(map(is_ok, covered_code))
+        print result, covered_line_numbers, covered_code
         return result
 
     return False
@@ -85,18 +108,25 @@ def non_empty_match(input, hostname, pid):
             for tool in ['cobertura', 'codecover', 'jmockit']]
 
 
-    exclude_static_fields_from = [('Closure', 117), ('Closure', 47)]
+    exclude_static_fields_from = [('Closure', 117), ('Closure', 47), ('Math', 3), ('Math', 63), ('Lang', 6),
+            ('Lang', 17), ('Lang', 19)]
     exclude_static_fields = [t for t in cobertura if t not in codecover and t in jmockit and \
             (project, version) in exclude_static_fields_from and plausable_static_field(project, version, t)]
 
+    codecover_exception_from = [('Chart', 1), ('Lang', 64)]
+    codecover_exception = [t for t in codecover if t not in jmockit and t not in cobertura and \
+            (project, version) in codecover_exception_from and plausable_codecover_field(project, version, t)]
+
     cobertura = [t for t in cobertura if t not in exclude_static_fields]
     jmockit   = [t for t in jmockit   if t not in exclude_static_fields]
+    codecover = [t for t in codecover if t not in codecover_exception]
     core = set(cobertura) & set(codecover) & set(jmockit)
 
     cobertura_, codecover_, jmockit_ = [[t for t in l if t not in core] for l in (cobertura, codecover, jmockit)]
 
     print test_classes, '/', len(core), "Agreement"
     print len(exclude_static_fields), " Excluded from jmockit and cobertura as static field initializers"
+    print len(codecover_exception), " Excluded from codecover as static field initializers"
 
     print "---"
     print len(cobertura_), sorted(cobertura_)
