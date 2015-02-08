@@ -82,7 +82,7 @@ def get_coverage(cvg_tool, tc):
     if not all(val in result for val in regexps.values()):
         raise CoverageCalculationException("Could not calculate coverage for: %s, %s" % (cvg_tool, tc))
 
-    if denominator_empty(cvg_tool, results):
+    if denominator_empty(cvg_tool, result):
         raise CoverageCalculationException("Lines Total reported as 0 for: %s, %s" % (cvg_tool, tc))
 
     return result
