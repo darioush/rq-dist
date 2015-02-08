@@ -11,6 +11,7 @@ from xml.dom.minidom import parse
 from cvgmeasure.conf import get_property
 from cvgmeasure.common import job_decorator, mk_key
 from cvgmeasure.d4 import d4, refresh_dir, add_to_path, checkout, test
+from cvgmeasure.d4 import get_tts
 
 
 class SubMismatch(Exception):
@@ -23,6 +24,9 @@ class DupMismatch(Exception):
     pass
 
 class TestFail(Exception):
+    pass
+
+class MissingTT(Exception):
     pass
 
 def no_dups(it1, label1):
@@ -47,6 +51,36 @@ def with_fails(fun):
     except Exception as e:
         return [e]
     return []
+
+@job_decorator
+def non_empty_includes_tt(input, hostname, pid):
+    project = input['project']
+    version = input['version']
+
+    work_dir, d4j_path, redis_url = map(
+            lambda property: get_property(property, hostname, pid),
+            ['work_dir', 'd4j_path', 'redis_url']
+    )
+
+    r = StrictRedis.from_url(redis_url)
+    keys = [mk_key('test-classes-cvg-nonempty', [tool, project, version]) for tool in ('cobertura', 'codecover', 'jmockit')]
+    test_classes = [set(r.hkeys(key)) for key in keys]
+    print test_classes
+    test_classes_core = reduce(lambda a,b: a&b, test_classes)
+
+    tts = get_tts(project, version)
+    print tts
+    tcs = [tc for tc, _, _ in [tt.partition('::') for tt in tts]]
+    print tcs
+    print test_classes_core
+
+    missing_tcs = [tc for tc in tcs if tc not in test_classes_core]
+
+    if len(missing_tcs) > 0:
+        raise MissingTT(' '.join(missing_tcs))
+
+    return "Success"
+
 
 def plausable_static_field(project, version, t):
     print "----------------"
@@ -147,5 +181,4 @@ def non_empty_match(input, hostname, pid):
 
 
     return "Success"
-
 

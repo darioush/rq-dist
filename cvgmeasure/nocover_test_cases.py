@@ -7,7 +7,7 @@ from plumbum.cmd import rm, mkdir, ls
 from redis import StrictRedis
 
 from cvgmeasure.common import job_decorator
-from cvgmeasure.common import check_key, filter_key_list
+from cvgmeasure.common import check_key, filter_key_list, mk_key
 from cvgmeasure.common import put_list, put_into_hash
 from cvgmeasure.conf import get_property
 from cvgmeasure.d4 import d4, checkout, refresh_dir, get_coverage
@@ -35,6 +35,7 @@ def test_lists(input, hostname, pid):
     )
 
     work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
+    print work_Dir
 
     r = StrictRedis.from_url(redis_url)
     with check_key(
@@ -73,14 +74,66 @@ def test_lists(input, hostname, pid):
 
     return "Success"
 
+@job_decorator
+def test_method_non_emptylists(input, hostname, pid):
+    project = input['project']
+    version = input['version']
+    redo    = input.get('redo', False)
+
+    work_dir, d4j_path, redis_url = map(
+            lambda property: get_property(property, hostname, pid),
+            ['work_dir', 'd4j_path', 'redis_url']
+    )
+
+    work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
+    print work_dir
+
+    r = StrictRedis.from_url(redis_url)
+    keys = [mk_key('test-classes-cvg-nonempty', [tool, project, version]) for tool in ('cobertura', 'codecover', 'jmockit')]
+    test_classes = [set(r.hkeys(key)) for key in keys]
+    test_classes_core = reduce(lambda a,b: a&b, test_classes)
+    print test_classes_core
+
+    test_methods = r.lrange(mk_key('test-methods', [project, version]), 0, -1)
+    test_methods_filtered = filter(lambda m: m.partition('::')[0] in test_classes_core, test_methods)
+
+    put_list(r, 'test-methods-cvg-nonempty', [project, version], test_methods_filtered)
+    assert len(test_methods_filtered) > 0
+    return "Success: %d / %d" % (len(test_methods_filtered), len(test_methods))
+
 
 @job_decorator
 def test_cvg_bundle(input, hostname, pid):
+    return handle_cvg_bundle(
+        input,
+        hostname,
+        pid,
+        input_key='test_classes',
+        check_key='test-classes-checked-for-emptiness',
+        result_key='test-classes-cvg',
+        files_key='test-classes-cvg-files',
+        non_empty_key='test-classes-cvg-nonempty',
+    )
+
+@job_decorator
+def test_cvg_methods(input, hostname, pid):
+    return handle_test_cvg_bundle(
+        input,
+        hostname,
+        pid,
+        input_key='test_methods',
+        check_key='test-methods-run',
+        result_key='test-methods-run-cvg',
+        files_key='test-methods-run-cvg-files',
+        non_empty_key='test-methods-run-cvg-nonempty',
+    )
+
+def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, files_key, non_empty_key):
     project = input['project']
     version = input['version']
     cvg_tool = input['cvg_tool']
     redo    = input.get('redo', False)
-    test_classes = input['test_classes']
+    test_classes = input[input_key]
 
     work_dir, d4j_path, redis_url = map(
             lambda property: get_property(property, hostname, pid),
@@ -94,11 +147,11 @@ def test_cvg_bundle(input, hostname, pid):
 
     with filter_key_list(
             r,
-            key='test-classes-checked-for-emptiness',
+            key=check_key,
             bundle=[cvg_tool, project, version],
             list=test_classes,
             redo=redo,
-            other_keys=['test-classes-cvg', 'test-classes-cvg-files', 'test-classes-cvg-nonempty'],
+            other_keys=[result_key, files_key, non_empty_key],
     ) as worklist:
         with refresh_dir(work_dir_path, cleanup=True):
             with add_to_path(d4j_path):
@@ -116,9 +169,9 @@ def test_cvg_bundle(input, hostname, pid):
                             print tc
                             results = get_coverage(cvg_tool, tc)
                             print results
-                            put_into_hash(r, 'test-classes-cvg', [cvg_tool, project, version], tc,
+                            put_into_hash(r, result_key, [cvg_tool, project, version], tc,
                                     json.dumps(results))
-                            put_into_hash(r, 'test-classes-cvg-nonempty', [cvg_tool, project, version], tc,
+                            put_into_hash(r, non_mepty_key, [cvg_tool, project, version], tc,
                                     1 if (results['lc'] + results['bc']) > 0 else None)
 
                             progress_callback()
@@ -126,7 +179,7 @@ def test_cvg_bundle(input, hostname, pid):
                             file_list = get_coverage_files_to_save(cvg_tool)
                             try:
                                 files = get_tar_gz_str(file_list)
-                                put_into_hash(r, 'test-classes-cvg-files', [cvg_tool, project, version], tc,
+                                put_into_hash(r, files_key, [cvg_tool, project, version], tc,
                                     files)
                             except:
                                 pass

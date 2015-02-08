@@ -44,6 +44,12 @@ def get_num_bugs(project):
 class CoverageCalculationException(Exception):
     pass
 
+def get_tts(project, version):
+    tts = d4()('info', '-p', project, '-v', str(version), '-t').rstrip().split('\n')
+    assert len(tts) > 0
+    return set(tts)
+
+
 def get_coverage(cvg_tool, tc):
     cvg = d4()['coverage', '-T', cvg_tool, '-t']
     output = cvg(tc)
