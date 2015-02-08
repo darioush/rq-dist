@@ -128,7 +128,7 @@ def test_cvg_methods(input, hostname, pid):
         non_empty_key='test-methods-run-cvg-nonempty',
     )
 
-def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, files_key, non_empty_key):
+def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_key, files_key, non_empty_key):
     project = input['project']
     version = input['version']
     cvg_tool = input['cvg_tool']
@@ -171,7 +171,7 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, files_key
                             print results
                             put_into_hash(r, result_key, [cvg_tool, project, version], tc,
                                     json.dumps(results))
-                            put_into_hash(r, non_mepty_key, [cvg_tool, project, version], tc,
+                            put_into_hash(r, non_empty_key, [cvg_tool, project, version], tc,
                                     1 if (results['lc'] + results['bc']) > 0 else None)
 
                             progress_callback()
