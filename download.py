@@ -20,7 +20,8 @@ def dlkey(r, key):
         dl(r, key, k, DIR + fn)
 
 def keys(r):
-    for key in r.keys("results:test-classes-cvg-files:*"):
+    #for key in r.keys("results:test-classes-cvg-files:*"):
+    for key in r.keys("results:test-methods-run-cvg-files:*"):
         try:
             dlkey(r, key)
             r.delete(key)

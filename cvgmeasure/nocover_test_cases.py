@@ -11,7 +11,8 @@ from cvgmeasure.common import check_key, filter_key_list, mk_key
 from cvgmeasure.common import put_list, put_into_hash
 from cvgmeasure.conf import get_property
 from cvgmeasure.d4 import d4, checkout, refresh_dir, get_coverage
-from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_str, add_to_path
+from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_str, add_to_path, compile_if_needed
+from cvgmeasure.d4 import is_empty, denominator_empty
 
 
 def test_list_special_case(tc):
@@ -128,6 +129,7 @@ def test_cvg_methods(input, hostname, pid):
         non_empty_key='test-methods-run-cvg-nonempty',
     )
 
+
 def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_key, files_key, non_empty_key):
     project = input['project']
     version = input['version']
@@ -156,13 +158,12 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_ke
         with refresh_dir(work_dir_path, cleanup=True):
             with add_to_path(d4j_path):
                 with checkout(project, version, work_dir_path / 'checkout'):
-                    d4()('compile')
+                    compile_if_needed(cvg_tool)
                     print "reset"
                     results = get_coverage(cvg_tool, 'reset')
                     print results
-                    assert results['lc'] == 0 # make sure result of reset is successful
-                    assert results['bc'] == 0
-                    assert results['lt'] > 0
+                    assert is_empty(cvg_tool, results) # make sure result of reset is successful
+                    assert not denominator_empty(cvg_tool, results)
 
                     for tc, progress_callback in worklist:
                         try:
@@ -172,7 +173,7 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_ke
                             put_into_hash(r, result_key, [cvg_tool, project, version], tc,
                                     json.dumps(results))
                             put_into_hash(r, non_empty_key, [cvg_tool, project, version], tc,
-                                    1 if (results['lc'] + results['bc']) > 0 else None)
+                                    None if is_empty(cvg_tool, results) else 1)
 
                             progress_callback()
                         finally:

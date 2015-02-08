@@ -51,14 +51,26 @@ def get_tts(project, version):
 
 
 def get_coverage(cvg_tool, tc):
-    cvg = d4()['coverage', '-T', cvg_tool, '-t']
-    output = cvg(tc)
-    regexps = {
-            r'Lines total: (\d+)': 'lt',
-            r'Lines covered: (\d+)': 'lc',
-            r'Branches total: (\d+)': 'bt',
-            r'Branches covered: (\d+)': 'bc',
-    }
+    if cvg_tool == 'major':
+        if 'tc' == 'reset':
+            tc = 'edu.washington.cs.emptyTest.EmptyTest::testNothing'
+        cvg = d4()['mutation', '-t']
+        output = cvg(tc)
+        regexps = {
+                r'\s*Mutants generated: (\d+)': 'mt',
+                r'\s*Mutants covered: (\d+)': 'mc',
+                r'\s*Mutants killed: (\d+)': 'mk',
+        }
+    else:
+        cvg = d4()['coverage', '-T', cvg_tool, '-t']
+        output = cvg(tc)
+        regexps = {
+                r'Lines total: (\d+)': 'lt',
+                r'Lines covered: (\d+)': 'lc',
+                r'Branches total: (\d+)': 'bt',
+                r'Branches covered: (\d+)': 'bc',
+        }
+
     result = {}
     def update_dict(line, result):
         for regexp, key in regexps.iteritems():
@@ -70,17 +82,32 @@ def get_coverage(cvg_tool, tc):
     if not all(val in result for val in regexps.values()):
         raise CoverageCalculationException("Could not calculate coverage for: %s, %s" % (cvg_tool, tc))
 
-    if result['lt'] == 0:
+    if denominator_empty(cvg_tool, results):
         raise CoverageCalculationException("Lines Total reported as 0 for: %s, %s" % (cvg_tool, tc))
 
     return result
 
+def compile_if_needed(cvg_tool):
+    if cvg_tool == 'major':
+        return
+    return d4()('compile')
+
+def is_empty(cvg_tool, results):
+    if cvg_tool == 'major':
+        return (results['mk'] + results['mc']) == 0
+    return (results['lc'] + results['bc']) == 0
+
+def denominator_empty(cvg_tool, results):
+    if cvg_tool == 'major':
+        return results['mt'] == 0
+    return results['lt'] == 0
 
 def get_coverage_files_to_save(cvg_tool):
     return {
         'cobertura': ['cobertura.ser', 'coverage/'],
         'codecover': ['coverage/'],
         'jmockit'  : ['coverage/'],
+        'major'    : ['exclude.txt', 'kill.csv', 'mutants.log', '.mutation.log', 'summary.csv', 'testMap.csv', 'mml/'],
     }[cvg_tool]
 
 
