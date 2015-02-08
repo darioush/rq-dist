@@ -52,7 +52,7 @@ def get_tts(project, version):
 
 def get_coverage(cvg_tool, tc):
     if cvg_tool == 'major':
-        if 'tc' == 'reset':
+        if tc == 'reset':
             tc = 'edu.washington.cs.emptyTest.EmptyTest::testNothing'
         cvg = d4()['mutation', '-t']
         output = cvg(tc)
