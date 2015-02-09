@@ -76,29 +76,50 @@ def test_lists(input, hostname, pid):
     return "Success"
 
 @job_decorator
-def test_method_non_emptylists(input, hostname, pid):
+def find_agree_classes(input, hostname, pid):
+    extras = {'in_key' : 'test-classes-cvg-nonempty', 'out_key': 'test-methods-cvg-nonempty'}
+    extras.update(input)
+    return handle_test_method_non_emptylists(
+        extras,
+        hostname,
+        pid,
+        split_fun = lambda m: m.partition('::')[0],
+    )
+
+@job_decorator
+def find_agree_methods(input, hostname, pid):
+    extras = {'in_key' : 'test-methods-run-cvg-nonempty', 'out_key': 'test-methods-agree-cvg-nonempty'}
+    extras.update(input)
+    return handle_test_method_non_emptylists(
+        extras,
+        hostname,
+        pid,
+    )
+
+
+
+def handle_test_method_non_emptylists(input, hostname, pid, split_fun=lambda x: x):
     project = input['project']
     version = input['version']
     redo    = input.get('redo', False)
+    in_key  = input['in_key']
+    out_key = input['out_key']
 
     work_dir, d4j_path, redis_url = map(
             lambda property: get_property(property, hostname, pid),
             ['work_dir', 'd4j_path', 'redis_url']
     )
 
-    work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
-    print work_dir
-
     r = StrictRedis.from_url(redis_url)
-    keys = [mk_key('test-classes-cvg-nonempty', [tool, project, version]) for tool in ('cobertura', 'codecover', 'jmockit')]
+    keys = [mk_key(in_key, [tool, project, version]) for tool in ('cobertura', 'codecover', 'jmockit')]
     test_classes = [set(r.hkeys(key)) for key in keys]
     test_classes_core = reduce(lambda a,b: a&b, test_classes)
-    print test_classes_core
+    #print test_classes_core
 
     test_methods = r.lrange(mk_key('test-methods', [project, version]), 0, -1)
-    test_methods_filtered = filter(lambda m: m.partition('::')[0] in test_classes_core, test_methods)
+    test_methods_filtered = filter(lambda m: split_fun(m) in test_classes_core, test_methods)
 
-    put_list(r, 'test-methods-cvg-nonempty', [project, version], test_methods_filtered)
+    put_list(r, out_key, [project, version], test_methods_filtered)
     assert len(test_methods_filtered) > 0
     return "Success: %d / %d" % (len(test_methods_filtered), len(test_methods))
 

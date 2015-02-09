@@ -66,7 +66,13 @@ def showall():
 
     print "%d workers running on total" % (len(machine_workers),)
     if len(machine_workers):
-        print '\n'.join(map(lambda m: "%s\t%s" % (m.name, m.get_state()),
+        def get_job(w):
+            j = w.get_current_job()
+            if j:
+                return j.get_call_string()[20:120]
+            else:
+                return '---'
+        print '\n'.join(map(lambda m: "%s\t%s\t%s" % (m.name, m.get_state(), get_job(m)),
             machine_workers))
 
 def main(machine, instances):

@@ -81,7 +81,6 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
             if restrict_version and not any(is_ok(i, v) for v in restrict_version):
                 continue
 
-            # source_key = 'test-classes'
             key = mk_key(source_key, [project, i])
             size = r.llen(key)
             if bundle_max is not None:
@@ -90,10 +89,8 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
             already_computed = {}
             if alternate_key and check_key:
                 for alternate in alternates:
-                    # check_key = 'test-classes-checked-for-emptiness'
                     _key = mk_key(check_key, [alternate, project, i, 'bundles'])
                     already_computed[alternate] = set(r.hkeys(_key))
-                    #print "Using key: ", _key, len(already_computed[alternate])
 
             for j in xrange(bundle_offset, size, bundle_size):
                 bundle = r.lrange(key, j, j+bundle_size-1)

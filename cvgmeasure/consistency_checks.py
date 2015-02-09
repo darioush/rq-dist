@@ -127,6 +127,9 @@ def plausable_codecover_field(project, version, t):
 def non_empty_match(input, hostname, pid):
     project = input['project']
     version = input['version']
+    input_key = input['key']
+    key_all = input['key_all']
+    should_fail_job = input.get('should_fail_job', True)
 
     work_dir, d4j_path, redis_url = map(
             lambda property: get_property(property, hostname, pid),
@@ -134,11 +137,11 @@ def non_empty_match(input, hostname, pid):
     )
 
     r = StrictRedis.from_url(redis_url)
-    key = mk_key('test-classes', [project, version])
+    key = mk_key(key_all, [project, version])
     test_classes = r.llen(key) #r.lrange(key, 0, -1)
 
 
-    cobertura, codecover, jmockit = [r.hkeys(mk_key('test-classes-cvg-nonempty', [tool, project, version]))
+    cobertura, codecover, jmockit = [r.hkeys(mk_key(input_key, [tool, project, version]))
             for tool in ['cobertura', 'codecover', 'jmockit']]
 
 
@@ -176,7 +179,7 @@ def non_empty_match(input, hostname, pid):
     fails.extend(with_fails(lambda: check_sub(jmockit, 'jmockit', codecover, 'codecover')))
 
 
-    if fails:
+    if fails and should_fail_job:
         raise SubMismatch(' AND '.join([str(ex) for ex in fails]))
 
 
