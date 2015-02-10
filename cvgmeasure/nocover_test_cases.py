@@ -36,7 +36,7 @@ def test_lists(input, hostname, pid):
     )
 
     work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
-    print work_Dir
+    print work_dir
 
     r = StrictRedis.from_url(redis_url)
     with check_key(

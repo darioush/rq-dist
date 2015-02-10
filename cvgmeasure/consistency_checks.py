@@ -111,7 +111,8 @@ def plausable_codecover_field(project, version, t):
         f = tar.extractfile('coverage/report_html/report_single.html')
         tree = parse(f)
         nodes = xpath.find('//span[@class="covered fullyCovered Statement_Coverage"]', tree)
-        covered_line_numbers = [int(xpath.find("td/a/text()", node.parentNode.parentNode)[0].nodeValue) for node in nodes]
+        covered_line_numbers = [int(xpath.find("td/a/text()",
+            node.parentNode.parentNode)[0].nodeValue) for node in nodes]
         covered_code = [xpath.find('text()', node)[0].nodeValue for noe in nodes]
 
         def is_ok(code):

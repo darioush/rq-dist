@@ -131,3 +131,8 @@ def test(extra_args=[]):
     assert len(failed_tests) == failed_tests_cnt
     return failed_tests
 
+def get_modified_sources(project, version):
+    lines = d4()('info', '-p', project, '-v', str(version), '-m').rstrip().split('\n')
+    directory = lines[0]
+    files = lines[1:]
+    return (directory, files)
