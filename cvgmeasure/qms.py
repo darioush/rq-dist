@@ -155,7 +155,7 @@ def setup_tgs(input, hostname, pid):
             r,
             key='',
             bundle=[qm, project, version],
-            list=tests.
+            list=tests,
             redo=redo,
             other_keys=[]
     ) as worklist:
