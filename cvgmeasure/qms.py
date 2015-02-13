@@ -135,6 +135,7 @@ def setup_tgs(input, hostname, pid):
     version = input['version']
     qm      = input['qm']
     tests   = input['tests']
+    redo    = input.get('redo', False)
 
     work_dir, d4j_path, redis_url = map(
             lambda property: get_property(property, hostname, pid),
