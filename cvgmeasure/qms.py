@@ -201,11 +201,10 @@ def setup_tgs(input, hostname, pid):
     ) as worklist:
         for test, callback in worklist:
             with refresh_dir(work_dir_path, cleanup=True):
-                with add_to_path(d4j_path):
-                    print test
-                    tgs = {tool: get_tgs(d4j_location, tool, project, version, test) for tool in tools}
-                    pp_tgs(rr, [qm, project, version], test, tgs, tools, verbose=verbose)
-                    callback()
+                print test
+                tgs = {tool: get_tgs(d4j_location, tool, project, version, test) for tool in tools}
+                pp_tgs(rr, [qm, project, version], test, tgs, tools, verbose=verbose)
+                callback()
 
     return "Success"
 
