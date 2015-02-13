@@ -10,7 +10,7 @@ from xml.dom.minidom import parse
 
 from cvgmeasure.d4 import d4, checkout, refresh_dir, get_coverage, add_to_path, get_modified_sources
 from cvgmeasure.fileaccess import get_file
-from cvgmeasure.common import job_decorator, mk_key
+from cvgmeasure.common import job_decorator, mk_key, filter_key_list
 from cvgmeasure.conf import get_property
 from cvgmeasure.conf import REDIS_URL_TG
 
