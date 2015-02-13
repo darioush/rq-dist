@@ -101,7 +101,6 @@ def find_agree_methods(input, hostname, pid):
 def handle_test_method_non_emptylists(input, hostname, pid, split_fun=lambda x: x):
     project = input['project']
     version = input['version']
-    redo    = input.get('redo', False)
     in_key  = input['in_key']
     out_key = input['out_key']
 

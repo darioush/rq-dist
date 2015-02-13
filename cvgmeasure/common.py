@@ -64,8 +64,8 @@ def job_decorator(f):
     return decorated
 
 
-def mk_key(key, bundle):
-    return ':'.join([REDIS_PREFIX, key] + map(unicode, bundle))
+def mk_key(key, bundle, prefix=REDIS_PREFIX):
+    return ':'.join([prefix, key] + map(unicode, bundle))
 
 def put_list(r, key, bundle, list):
     _key = mk_key(key, bundle)
