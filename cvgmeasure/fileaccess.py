@@ -1,5 +1,6 @@
 import socket
 import tarfile
+import plumbum.path.utils
 
 from plumbum import SshMachine, LocalPath
 from contextlib import contextmanager
@@ -21,18 +22,19 @@ def get_file(keys):
 def get_file_local(key):
     path = DIR + key + '.tar.gz'
     fileobj = open(path)
-    yield tarfile.open(fileobj=fileobj)
+    return tarfile.open(fileobj=fileobj)
 
 
 def get_file_remote(key):
     cache = LocalPath(CACHE)
     cache.mkdir()
-    local_path = str(cache) / (key + '.tar.gz')
+    local_path = cache / (key + '.tar.gz')
     if not local_path.exists():
         with SshMachine(FS) as rem:
             path = rem.path(DIR) / (key + '.tar.gz')
-            rem.copy(str(cache))
+            assert path.exists()
+            plumbum.path.utils.copy(path, local_path)
             assert local_path.exists()
 
     fileobj = open(str(local_path))
-    yield tarfile.open(fileobj=fileobj)
+    return tarfile.open(fileobj=fileobj)

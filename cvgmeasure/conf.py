@@ -1,5 +1,6 @@
 
 REDIS_PREFIX = 'results'
+DATA_PREFIX = 'data'
 REDIS_URL_RQ = 'redis://monarch.cs.washington.edu:6379/0'
 REDIS_URL_TG = 'redis://monarch.cs.washington.edu:6379/2'
 
