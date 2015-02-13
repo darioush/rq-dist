@@ -25,16 +25,22 @@ def get_tgs_cobertura_raw(tar):
     for line in lines:
         fname = line.parentNode.parentNode.parentNode.parentNode.getAttribute('filename')
         number, hits = int(line.getAttribute('number')), int(line.getAttribute('hits'))
-        result.append((fname,number,hits))
+        is_init = line.parentNode.parentNode.getAttribute('name') == '<init>'
+        result.append((fname,number,hits, is_init))
     return result
 
 def get_tgs_cobertura(tar):
     tgs = {}
-    for fname, lnumber, hits in get_tgs_cobertura_raw(tar):
+    inits = {}
+    for fname, lnumber, hits, is_init in get_tgs_cobertura_raw(tar):
         key = (fname, lnumber)
         if key in tgs:
-            raise Exception("Duplicate line number in report from cobertura")
+            if inits.get(key, None) or is_init:
+                print "Warning -- skipping %s:%d because it was an init dup" % key
+            else:
+                raise Exception("Duplicate line number in report from cobertura: %s:%d" % key)
         tgs[key] = 1 if hits > 0 else 0
+        inits[key] = 1 if is_init else 0
     return tgs
 
 
@@ -50,7 +56,17 @@ def get_tgs_codecover_raw(tar):
     ## code coverage information
     f = tar.extractfile('coverage/report_html/report_single.html')
     tree = parse(f)
-    lines = xpath.find('//tr[@class="code"]/td[@class="code text"]', tree)
+    ## lines = xpath.find('//tbody[@class="code"]/tr[@class="code"]/td[@class="code text"]', tree)
+    def get_lines():
+        tbodys = xpath.find('//tbody[@class="code"]', tree)
+        trs = reduce(lambda a,b: a+b,
+                [[elem for elem in tbody.getElementsByTagName("tr") if elem.getAttribute('class') == 'code']
+                    for tbody in tbodys])
+        tds = reduce(lambda a,b: a+b,
+                [[elem for elem in tr.getElementsByTagName("td") if elem.getAttribute('class') == 'code text']
+                    for tr in trs])
+        return tds
+    lines = get_lines()
     result = []
     for line in lines:
         lnumberStr = line.parentNode.getAttribute('id')
@@ -62,17 +78,26 @@ def get_tgs_codecover_raw(tar):
                 len(xpath.find('span[contains(@class, "%s")]' % token, line)) > 0
                 for token in ("fullyCovered", "partlyCovered", "notCovered")
         ]
-        result.append(((fmap[fnumber], lnumber) , fully_cvrd, partially_cvrd, not_cvrd))
+        terms_only = all(
+                len(xpath.find('span[contains(@class, "%s_Coverage")]' % token, line)) == 0
+                for token in ("Loop", "Branch", "Statement", "Operator")
+        )
+        result.append(((fmap[fnumber], lnumber) , fully_cvrd, partially_cvrd, not_cvrd, terms_only))
     return result
+
+
+## This is so bad. Something something research tradeoff
+terms_only = {}
 
 def get_tgs_codecover(tar):
     tgs = {}
-    for (fname, lnumber), full, partial, nocover in get_tgs_codecover_raw(tar):
+    for (fname, lnumber), full, partial, nocover, term in get_tgs_codecover_raw(tar):
         key = (fname, lnumber)
         if full or partial:
             tgs[key] = 1
         elif nocover:
             tgs[key] = 0
+        terms_only[key] = term
     return tgs
 
 
@@ -116,13 +141,28 @@ def get_tgs(path, tool, project, version, test):
 class AgreementException(Exception):
             pass
 
-def assert_agree(ex, tool1, tool2, f, n):
+def assert_agree(ex, tool1, tool2, f, n, test):
     try:
         assert ex[tool1] == ex[tool2]
     except:
-        raise AgreementException("Tools %s and %s disagree on tg %s:%d: %s vs. %s" % (tool1,
-            tool2, f, n, ex[tool1], ex[tool2]))
+        raise AgreementException("Tools %s and %s disagree on tg %s:%d: %s vs. %s [test: %s]" % (tool1,
+            tool2, f, n, ex[tool1], ex[tool2], test))
 
+
+def known_exception(f, n, tgs, test):
+    def get_chrs(n):
+        return [tgs[tool].get((f, n), 'x') for tool in ['cobertura', 'codecover', 'jmockit']]
+
+    if get_chrs(n) == [1, 0, 1] and terms_only[(f, n)]:
+        prev_line = n - 1
+        while get_chrs(prev_line) == ['x', 0, 'x'] and terms_only[(f, prev_line)]:
+            prev_line -= 1
+
+        if get_chrs(prev_line) == ['x', 1, 'x'] and not terms_only[(f, prev_line)]:
+            print "Warning -- allowing bypass for line: %s:%d" % (f, n)
+            return True
+
+    return False
 
 # bundle = [qm, project, version]
 def pp_tgs(r, bundle, test, tgs, tools, verbose=0):
@@ -132,9 +172,12 @@ def pp_tgs(r, bundle, test, tgs, tools, verbose=0):
             return str(tgs[tool].get((f, n), 'x'))
 
         ex = {tool: get_chr(tool) for tool in tools}
-        assert_agree(ex, 'cobertura', 'jmockit', f, n)
+        if known_exception(f, n, tgs, test):
+            r.sadd(mk_data_key('exceptions', bundle), "%s:%d" % (f,n))
+            continue
+        assert_agree(ex, 'cobertura', 'jmockit', f, n, test)
         if ex['codecover'] != 'x' and ex['cobertura'] != 'x':
-            assert_agree(ex, 'codecover', 'cobertura', f, n)
+            assert_agree(ex, 'codecover', 'cobertura', f, n, test)
 
         if verbose:
             chr_str = '\t'.join(map(get_chr, tools))
