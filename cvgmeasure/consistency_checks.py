@@ -1,5 +1,4 @@
 import os
-import tarfile
 import xpath
 import re
 
@@ -12,6 +11,7 @@ from cvgmeasure.conf import get_property
 from cvgmeasure.common import job_decorator, mk_key
 from cvgmeasure.d4 import d4, refresh_dir, add_to_path, checkout, test
 from cvgmeasure.d4 import get_tts
+from cvgmeasure.fileaccess import get_file
 
 
 class SubMismatch(Exception):
@@ -84,9 +84,7 @@ def non_empty_includes_tt(input, hostname, pid):
 
 def plausable_static_field(project, version, t):
     print "----------------"
-    # TODO: only works locally for now
-    tarpath = local.path('/scratch/darioush/files') / ("cobertura:%s:%d:%s.tar.gz" % (project, version, t))
-    with tarfile.open(str(tarpath)) as tar:
+    with get_file(['cobertura', project, version, t]) as tar:
         f = tar.extractfile('coverage/coverage.xml')
         tree = parse(f)
         covered_lines_ok_clinit = xpath.find('//class/methods/method[@name="<clinit>"]/lines/line[@hits>0]', tree)
@@ -105,9 +103,7 @@ def plausable_static_field(project, version, t):
     return False
 
 def plausable_codecover_field(project, version, t):
-    # TODO: only works locally for now
-    tarpath = local.path('/scratch/darioush/files') / ("codecover:%s:%d:%s.tar.gz" % (project, version, t))
-    with tarfile.open(str(tarpath)) as tar:
+    with get_file(['codecover', project, version, t]) as tar:
         f = tar.extractfile('coverage/report_html/report_single.html')
         tree = parse(f)
         nodes = xpath.find('//span[@class="covered fullyCovered Statement_Coverage"]', tree)
