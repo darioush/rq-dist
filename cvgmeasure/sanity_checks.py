@@ -100,6 +100,8 @@ def method_list_matches(input, hostname, pid):
                     test_methods_from_d4 = test_methods_from_d4[:idxd4] + [good_class1 + tname,
                             good_class2 + tname] + test_methods_from_d4[idxd4+1:]
 
+                    expected_fails = []
+
                 else:
                     expected_fails = []
 

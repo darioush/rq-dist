@@ -67,13 +67,15 @@ def showall():
     print "%d workers running on total" % (len(machine_workers),)
     if len(machine_workers):
         def get_job(w):
+            if w.get_state() != 'busy':
+                return '---'
             j = w.get_current_job()
             if j:
                 return j.get_call_string()[20:120]
             else:
                 return '---'
-        print '\n'.join(map(lambda m: "%s\t%s\t%s" % (m.name, m.get_state(), get_job(m)),
-            machine_workers))
+        print '\n'.join(["%s\t%s\t%s" % (m.name, m.get_state(), get_job(m))
+            for m in machine_workers])
 
 def main(machine, instances):
     r = StrictRedis.from_url(REDIS_URL_RQ)

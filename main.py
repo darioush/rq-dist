@@ -133,7 +133,7 @@ if __name__ == "__main__":
     parser.add_option("-a", "--alternate",     dest="alternates", action="append")
     parser.add_option("-K", "--alternate-key", dest="alternate_key", action="store", type="string", default=None)
 
-    parser.add_option("-Z", "--remove-completed", dest="remove_completed", action="store", type="string", default=None)
+    parser.add_option("-Z", "--remove-completed", dest="check_key", action="store", type="string", default=None)
     parser.add_option("-S", "--source-key", dest="source_key", action="store", type="string")
 
     (options, args) = parser.parse_args(sys.argv[3:])
