@@ -142,8 +142,10 @@ def non_empty_match(input, hostname, pid):
             for tool in ['cobertura', 'codecover', 'jmockit']]
 
 
-    exclude_static_fields_from = [('Closure', 117), ('Closure', 47), ('Math', 3), ('Math', 63), ('Lang', 6),
-            ('Lang', 17), ('Lang', 19)]
+    exclude_static_fields_from = [
+            ('Closure', 117), ('Closure', 100), ('Closure', 43), ('Closure', 47), ('Closure', 37),
+            ('Math', 3), ('Math', 63), ('Lang', 6),
+            ('Lang', 28), ('Lang', 17), ('Lang', 19)]
     exclude_static_fields = [t for t in cobertura if t not in codecover and t in jmockit and \
             (project, version) in exclude_static_fields_from and plausable_static_field(project, version, t)]
 
