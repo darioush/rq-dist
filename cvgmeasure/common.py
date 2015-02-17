@@ -27,8 +27,8 @@ def redirect_stdio():
     else:
         oldout, olderr = sys.stdout, sys.stderr
         newout, newerr = StringIO(), StringIO()
-        sys.stdout = Tee(sys.stdout, newout)
-        sys.stderr = Tee(sys.stderr, newerr)
+        #sys.stdout = Tee(sys.stdout, newout)
+        #sys.stderr = Tee(sys.stderr, newerr)
         try:
             yield
             job.meta['stdout'] = newout.getvalue()

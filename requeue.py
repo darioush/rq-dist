@@ -102,6 +102,7 @@ if __name__ == "__main__":
     parser.add_option("-t", "--timeout", dest="timeout", action="store", type="int", default=None)
     parser.add_option("-j", "--job", dest="job", action="store", type="string", default=None)
     parser.add_option("-J", "--job-file", dest="job_file", action="store", type="string", default=None)
+    parser.add_option("-n", "--newest", dest="newest", action="store_true", default=False)
     parser.add_option("-a", "--commit", dest="action", action="store_true", default=False)
     parser.add_option("-l", "--list-timeouts", dest="list", action="store_true", default=False)
     parser.add_option("-g", "--list-regexp", dest="regexp", action="store", default=None)
@@ -123,3 +124,8 @@ if __name__ == "__main__":
     if options.regexp:
         list_regexp(options)
 
+    if options.newest:
+        r = redis.StrictRedis.from_url(REDIS_URL_RQ)
+        fq = get_failed_queue(connection=r)
+        newest = fq.get_job_ids()[:1]
+        requeue(options, job_list=newest)

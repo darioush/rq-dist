@@ -21,6 +21,7 @@ java = local['java']
 terms_only = {}
 branches_only = {}
 access_method = {}
+bc_unreachable = {}
 
 def get_tgs_cobertura_raw(tar):
     f = tar.extractfile('coverage/coverage.xml')
@@ -133,6 +134,20 @@ def get_tgs_codecover_raw(tar):
             lnumberStr = 'F0' + lnumberStr
 
         fnumber, lnumber = map(int, re.match(r'F(\d+)L(\d+)', lnumberStr).groups())
+
+        text = []
+        def get_text_nodes(n):
+            if n.nodeType == line.TEXT_NODE:
+                text.append(n.nodeValue)
+            for child in n.childNodes:
+                get_text_nodes(child)
+
+        get_text_nodes(line)
+        code = ''.join(text).strip()
+        is_unreachable_in_bytecode = code in [
+            "continue;", "break;"
+        ]
+
         fully_cvrd, partially_cvrd, not_cvrd = [
                 len(xpath.find('span[contains(@class, "%s")]' % token, line)) > 0
                 for token in ("fullyCovered", "partlyCovered", "notCovered")
@@ -153,14 +168,14 @@ def get_tgs_codecover_raw(tar):
         ## search in the fmap for the last item that has idx <= this fnumber!!!!
         this_line_full_name = [full for (full, idx) in fmap[this_line_short_fname] if idx <= fnumber][-1]
 
-        result.append(((this_line_full_name, lnumber) , fully_cvrd, partially_cvrd, not_cvrd, terms_only, branches_only))
+        result.append(((this_line_full_name, lnumber) , fully_cvrd, partially_cvrd, not_cvrd, terms_only, branches_only, is_unreachable_in_bytecode))
     return result
 
 
 
 def get_tgs_codecover(tar):
     tgs = {}
-    for (fname, lnumber), full, partial, nocover, term, branch_only in get_tgs_codecover_raw(tar):
+    for (fname, lnumber), full, partial, nocover, term, branch_only, bc_un in get_tgs_codecover_raw(tar):
         key = (fname, lnumber)
         if full or partial:
             tgs[key] = 1
@@ -168,6 +183,7 @@ def get_tgs_codecover(tar):
             tgs[key] = 0
         terms_only[key] = term
         branches_only[key] = branch_only
+        bc_unreachable[key] = bc_un
     return tgs
 
 
@@ -229,12 +245,8 @@ def known_exception(f, n, tgs, test):
     def get_chrs(n):
         return [tgs[tool].get((f, n), 'x') for tool in ['cobertura', 'codecover', 'jmockit']]
 
-    if get_chrs(n) == [0, 1, 0] and (f, n) in [
-            ('org/apache/commons/lang3/time/FastDateFormat.java', 511),
-            ('org/apache/commons/lang3/time/FastDateFormat.java', 500),
-            ('org/apache/commons/lang3/time/FastDateFormat.java', 575),
-    ]:
-        print "Warning -- allowing bypass for known impossible coding situation : e.g., break; after else" % (f, n)
+    if get_chrs(n) == [0, 1, 0] and bc_unreachable[(f, n)]:
+        print "Warning -- allowing bypass for known impossible coding situation : e.g., break; after else %s:%d" % (f, n)
         return True
 
     if get_chrs(n) in ([0, 1, 0], [1, 0, 1]) and branches_only[(f, n)]:
