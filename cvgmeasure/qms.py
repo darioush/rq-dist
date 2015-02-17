@@ -17,6 +17,11 @@ from cvgmeasure.conf import REDIS_URL_TG
 
 java = local['java']
 
+## This is so bad. Something something research tradeoff
+terms_only = {}
+branches_only = {}
+access_method = {}
+
 def get_tgs_cobertura_raw(tar):
     f = tar.extractfile('coverage/coverage.xml')
     tree = parse(f)
@@ -26,21 +31,28 @@ def get_tgs_cobertura_raw(tar):
         fname = line.parentNode.parentNode.parentNode.parentNode.getAttribute('filename')
         number, hits = int(line.getAttribute('number')), int(line.getAttribute('hits'))
         is_init = line.parentNode.parentNode.getAttribute('name') == '<init>'
-        result.append((fname,number,hits, is_init))
+        is_clinit = line.parentNode.parentNode.getAttribute('name') == '<clinit>'
+        is_access = line.parentNode.parentNode.getAttribute('name').startswith('access$')
+        result.append((fname,number,hits, is_init, is_clinit, is_access))
     return result
 
 def get_tgs_cobertura(tar):
     tgs = {}
     inits = {}
-    for fname, lnumber, hits, is_init in get_tgs_cobertura_raw(tar):
+    clinits = {}
+    for fname, lnumber, hits, is_init, is_clinit, is_access in get_tgs_cobertura_raw(tar):
         key = (fname, lnumber)
         if key in tgs:
             if inits.get(key, None) or is_init:
                 print "Warning -- skipping %s:%d because it was an init dup" % key
+            elif clinits.get(key, None) or is_clinit:
+                print "Warning -- skipping %s:%d because it was a clinit dup" % key
             else:
                 raise Exception("Duplicate line number in report from cobertura: %s:%d" % key)
         tgs[key] = 1 if hits > 0 else 0
         inits[key] = 1 if is_init else 0
+        access_method[key] = 1 if is_access else 0
+        clinits[key] = 1 if is_clinit else 0
     return tgs
 
 
@@ -48,15 +60,62 @@ def get_tgs_codecover_raw(tar):
     ## overview / filenames information
     f = tar.extractfile('coverage/report.csv')
     reader = csv.reader(f)
-    fmap = []
+    packages = set([])
+    name_to_full_name_map = {} ## short name -> array of full names
+
     for row in reader:
-        if row[2] == 'class':
-            fmap.append(row[0].replace('.', '/') + '.java')
+        if row[2] == 'package':
+            packages.add(row[0])
+        if row[2] == 'class' and '.'.join(row[0].split('.')[:-1]) in packages:
+            name = row[0].split('.')[-1]
+            if name in name_to_full_name_map:
+                l = name_to_full_name_map[name]
+            else:
+                l = []
+            l.append(row[0].replace('.', '/') + '.java')
+            name_to_full_name_map[name] = l
 
     ## code coverage information
     f = tar.extractfile('coverage/report_html/report_single.html')
     tree = parse(f)
+
+    ## next, read hyperlinking information from the overview table!
+    tbody = xpath.find('//tbody[@class="overview"]', tree)[0]
+    trs = [elem for elem in tbody.getElementsByTagName("tr")]
+    first_tds = [tr.getElementsByTagName("td")[0] for tr in trs]
+
+    first_tds_names = reduce(lambda a,b: a+b,
+            [[(a.getAttribute("href"), a.firstChild.nodeValue.strip()) for a in
+                td.getElementsByTagName("a")] for td in first_tds])
+
+    filtered_tds_names = [(x,y) for (x,y) in first_tds_names if y in name_to_full_name_map]
+
+    xrefs = [xpath.findnode('//a[@name="%s"]' % name[1:], tree) for (name, _) in filtered_tds_names]
+    code_hash = [myx.parentNode.parentNode.getAttribute('id') for myx in xrefs]
+    regexp_match = [re.match('F(\d+)(L\d+)?', x) for x in code_hash]
+    regexp_numbers = [int(match.group(1)) if match else 0 for match in regexp_match]
+    zipped_numbers = zip(regexp_numbers, map(lambda (_, x): x, filtered_tds_names))
+
+    def relevant_numbers(fn):
+        return [x for (x, y) in zipped_numbers if y == fn]
+
+    #print name_to_full_name_map
+    #print filtered_tds_names
+    #print regexp_numbers
+    #print zipped_numbers
+
+    ## next build up this map
+    fmap = {name : zip(name_to_full_name_map[name], relevant_numbers(name)) for name in name_to_full_name_map}
+
+    #print fmap
+
+    ## and the short fname map
+    short_name_elems = [s.replace('.java', '') for s in xpath.findvalues('//thead[@class="code"]/tr/th/text()', tree)]
+    #print short_name_elems
+
+
     ## lines = xpath.find('//tbody[@class="code"]/tr[@class="code"]/td[@class="code text"]', tree)
+    ## parse lines
     def get_lines():
         tbodys = xpath.find('//tbody[@class="code"]', tree)
         trs = reduce(lambda a,b: a+b,
@@ -82,22 +141,33 @@ def get_tgs_codecover_raw(tar):
                 len(xpath.find('span[contains(@class, "%s_Coverage")]' % token, line)) == 0
                 for token in ("Loop", "Branch", "Statement", "Operator")
         )
-        result.append(((fmap[fnumber], lnumber) , fully_cvrd, partially_cvrd, not_cvrd, terms_only))
+        branches_only = all(
+                len(xpath.find('span[contains(@class, "%s_Coverage")]' % token, line)) == 0
+                for token in ("Loop", "Term", "Statement", "Operator")
+        )
+
+
+        ## ok now, this is ugly::::
+        this_line_short_fname = short_name_elems[fnumber]
+        #print fmap[this_line_short_fname], fnumber
+        ## search in the fmap for the last item that has idx <= this fnumber!!!!
+        this_line_full_name = [full for (full, idx) in fmap[this_line_short_fname] if idx <= fnumber][-1]
+
+        result.append(((this_line_full_name, lnumber) , fully_cvrd, partially_cvrd, not_cvrd, terms_only, branches_only))
     return result
 
 
-## This is so bad. Something something research tradeoff
-terms_only = {}
 
 def get_tgs_codecover(tar):
     tgs = {}
-    for (fname, lnumber), full, partial, nocover, term in get_tgs_codecover_raw(tar):
+    for (fname, lnumber), full, partial, nocover, term, branch_only in get_tgs_codecover_raw(tar):
         key = (fname, lnumber)
         if full or partial:
             tgs[key] = 1
         elif nocover:
             tgs[key] = 0
         terms_only[key] = term
+        branches_only[key] = branch_only
     return tgs
 
 
@@ -149,18 +219,49 @@ def assert_agree(ex, tool1, tool2, f, n, test):
             tool2, f, n, ex[tool1], ex[tool2], test))
 
 
+
 def known_exception(f, n, tgs, test):
+
+    if test in ['org.apache.commons.lang3.RandomStringUtilsTest::testRandomStringUtils']:
+        print "Warning -- allowing bypass for known random test"
+        return True
+
     def get_chrs(n):
         return [tgs[tool].get((f, n), 'x') for tool in ['cobertura', 'codecover', 'jmockit']]
 
-    if get_chrs(n) == [1, 0, 1] and terms_only[(f, n)]:
-        prev_line = n - 1
-        while get_chrs(prev_line) == ['x', 0, 'x'] and terms_only[(f, prev_line)]:
-            prev_line -= 1
+    if get_chrs(n) == [0, 1, 0] and (f, n) in [
+            ('org/apache/commons/lang3/time/FastDateFormat.java', 511),
+            ('org/apache/commons/lang3/time/FastDateFormat.java', 500),
+            ('org/apache/commons/lang3/time/FastDateFormat.java', 575),
+    ]:
+        print "Warning -- allowing bypass for known impossible coding situation : e.g., break; after else" % (f, n)
+        return True
 
-        if get_chrs(prev_line) == ['x', 1, 'x'] and not terms_only[(f, prev_line)]:
-            print "Warning -- allowing bypass for line: %s:%d" % (f, n)
-            return True
+    if get_chrs(n) in ([0, 1, 0], [1, 0, 1]) and branches_only[(f, n)]:
+        print "Warning -- allowing bypass for line %s:%d because of branch only, e.g., } else {" % (f, n)
+        return True
+
+    if get_chrs(n) == [1, 0, 1] and terms_only[(f, n)]:
+        print "Warning -- allowing bypass for line: %s:%d because of terms only (split lines, do while)" % (f, n)
+        return True
+#        prev_line = n - 1
+#        while get_chrs(prev_line) == ['x', 0, 'x'] and terms_only[(f, prev_line)]:
+#            prev_line -= 1
+#
+#        if get_chrs(prev_line) == ['x', 1, 'x'] and not terms_only[(f, prev_line)]:
+#            print "Warning -- allowing bypass for line: %s:%d because of split lines" % (f, n)
+#            return True
+
+    if get_chrs(n) in [[1, 'x', 0], [1, 'x', 'x'], [0, 'x', 'x']] and access_method[(f, n)]:
+        print "Warning -- allowing bypass for line %s:%d because of access methods" % (f, n)
+        return True
+
+    if get_chrs(n) in [[0, 'x', 'x'], [1, 'x', 'x']] and (f, n) in [
+        ('org/apache/commons/lang3/time/DateUtils.java', 1821),
+        ('org/apache/commons/lang3/math/Fraction.java', 40),
+    ]:
+        print "Warning -- Special casing Iterator / Comparable Object next Method desugarizartion: %s:%d" % (f, n)
+        return True
 
     return False
 

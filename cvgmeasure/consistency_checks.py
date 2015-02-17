@@ -81,6 +81,30 @@ def non_empty_includes_tt(input, hostname, pid):
 
     return "Success"
 
+@job_decorator
+def non_empty_agree_includes_tt_methods(input, hostname, pid):
+    project = input['project']
+    version = input['version']
+
+    work_dir, d4j_path, redis_url = map(
+            lambda property: get_property(property, hostname, pid),
+            ['work_dir', 'd4j_path', 'redis_url']
+    )
+
+    r = StrictRedis.from_url(redis_url)
+    key = mk_key('test-methods-agree-cvg-nonempty', [project, version])
+    test_methods = set(r.lrange(key, 0, -1))
+
+    tts = get_tts(project, version)
+    print tts
+
+    missing_tms = [tm for tm in tts if tm not in test_methods]
+
+    if len(missing_tms) > 0:
+        raise MissingTT(' '.join(missing_tms))
+
+    return "Success"
+
 
 def plausable_static_field(project, version, t):
     print "----------------"
