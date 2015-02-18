@@ -2,5 +2,11 @@
 
 set -e
 
+if [ -z "$1" ]; then
+    queues="high default low";
+else
+    queues="$1";
+fi
+
 source env/bin/activate
-nohup rqworker --host monarch.cs.washington.edu high default low >/dev/null 2>&1 &
+nohup rqworker --host monarch.cs.washington.edu $queues >/dev/null 2>&1 &
