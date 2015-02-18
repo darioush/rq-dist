@@ -77,11 +77,16 @@ def showall():
         print '\n'.join(["%s\t%s\t%s" % (m.name, m.get_state(), get_job(m))
             for m in machine_workers])
 
-def main(machine, instances):
+
+def works_on(worker, queue):
+    return queue in [q.name for q in worker.queues]
+
+def main(machine, instances, queues=['high', 'default', 'low']):
     r = StrictRedis.from_url(REDIS_URL_RQ)
     machine_workers = [worker
             for worker in Worker.all(connection=r)
-            if is_local(machine, worker.name)]
+            if is_local(machine, worker.name) and \
+                any(works_on(worker, queue) for queue in queues)]
 
     print "%d workers running on %s" % (len(machine_workers), machine)
     if len(machine_workers):
@@ -93,7 +98,7 @@ def main(machine, instances):
 
     with rem.cwd(dir):
         for i in xrange(0, instances - len(machine_workers)):
-            rem["./worker.sh"]()
+            rem["./worker.sh"](' '.join(queues))
             print "Worker spawned"
 
 
@@ -123,7 +128,11 @@ def listhosts():
 
 if __name__ == "__main__":
     if sys.argv[1] == 'spawn':
-        main(sys.argv[2], int(sys.argv[3]))
+        queues = sys.argv[4:]
+        if queues:
+            main(sys.argv[2], int(sys.argv[3]), queues=queues)
+        else:
+            main(sys.argv[2], int(sys.argv[3]))
 
     if sys.argv[1] == 'setup':
         setup(sys.argv[2])
