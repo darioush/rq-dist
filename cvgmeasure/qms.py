@@ -284,6 +284,7 @@ def known_exception(f, n, tgs, test):
     if get_chrs(n) in [[0, 'x', 'x'], [1, 'x', 'x']] and (f, n) in [
         ('org/apache/commons/lang3/time/DateUtils.java', 1821),
         ('org/apache/commons/lang3/math/Fraction.java', 40),
+        ('org/joda/time/field/UnsupportedDurationField.java', 32),
     ]:
         print "Warning -- Special casing Iterator / Comparable Object next Method desugarizartion: %s:%d" % (f, n)
         return True
