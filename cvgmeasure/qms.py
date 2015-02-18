@@ -245,6 +245,19 @@ def known_exception(f, n, tgs, test):
     def get_chrs(n):
         return [tgs[tool].get((f, n), 'x') for tool in ['cobertura', 'codecover', 'jmockit']]
 
+    if get_chrs(n) == [0, 1, 0] and test in [
+            'org.apache.commons.lang.enums.ValuedEnumTest::testCompareTo_classloader_equal',
+            'org.apache.commons.lang.enums.ValuedEnumTest::testCompareTo_classloader_different',
+    ]:
+        print "Warning -- in these cases class loader is messed with and cobertura and jmockit are wrong. %s:%d" % (f, n)
+        return True
+
+    if get_chrs(n) == [1, 0, 1] and test in [
+            'org.apache.commons.lang.enums.ValuedEnumTest::testCompareTo_null',
+    ]:
+        print "Warning -- codecover is wrong : %s:%d" % (f, n)
+        return True
+
     if get_chrs(n) == [0, 1, 0] and bc_unreachable[(f, n)]:
         print "Warning -- allowing bypass for known impossible coding situation : e.g., break; after else %s:%d" % (f, n)
         return True
