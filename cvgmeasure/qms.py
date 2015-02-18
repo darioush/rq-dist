@@ -362,7 +362,7 @@ def setup_tgs(input, hostname, pid):
 
     with filter_key_list(
             r,
-            key='',
+            key='qm-computed',
             bundle=[qm, project, version],
             list=tests,
             redo=redo,
