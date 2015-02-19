@@ -25,12 +25,19 @@ def get_file_local(key):
     return tarfile.open(fileobj=fileobj)
 
 
-def get_file_remote(key):
+def get_file_remote(key, session=None):
     cache = LocalPath(CACHE)
     cache.mkdir()
     local_path = cache / (key + '.tar.gz')
     if not local_path.exists():
-        with SshMachine(FS) as rem:
+        if not session:
+            with SshMachine(FS) as rem:
+                path = rem.path(DIR) / (key + '.tar.gz')
+                assert path.exists()
+                plumbum.path.utils.copy(path, local_path)
+                assert local_path.exists()
+        else:
+            rem = session
             path = rem.path(DIR) / (key + '.tar.gz')
             assert path.exists()
             plumbum.path.utils.copy(path, local_path)
@@ -38,3 +45,12 @@ def get_file_remote(key):
 
     fileobj = open(str(local_path))
     return tarfile.open(fileobj=fileobj)
+
+
+def prefetch(keys):
+    if socket.gethostname() == FS:
+        return
+
+    with SshMachine(FS) as rem:
+        for key in keys:
+            get_file_remote(':'.join(map(str, key)), session=rem)

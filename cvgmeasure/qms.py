@@ -9,7 +9,7 @@ from redis import StrictRedis
 from xml.dom.minidom import parse
 
 from cvgmeasure.d4 import d4, checkout, refresh_dir, get_coverage, add_to_path, get_modified_sources
-from cvgmeasure.fileaccess import get_file
+from cvgmeasure.fileaccess import get_file, prefetch
 from cvgmeasure.common import job_decorator, mk_key, mk_data_key, filter_key_list
 from cvgmeasure.conf import get_property
 from cvgmeasure.conf import REDIS_URL_TG
@@ -247,7 +247,8 @@ def known_exception(f, n, tgs, test):
     def get_chrs(n):
         return [tgs[tool].get((f, n), 'x') for tool in ['cobertura', 'codecover', 'jmockit']]
 
-    if get_chrs(n) == [1, 0 ,1] and f == 'org/joda/time/DateTimeZone.java' and any((
+
+    if get_chrs(n) in ([1, 0 ,1],  [0, 1, 0]) and f == 'org/joda/time/DateTimeZone.java' and any((
             123 <= n <= 224,
             290 <= n <= 315,
             316 <= n <= 349,
@@ -314,7 +315,7 @@ def known_exception(f, n, tgs, test):
         print "Warning -- Special casing Iterator / Comparable Object next Method desugarizartion: %s:%d" % (f, n)
         return True
 
-    if get_chrs(n) in [[0, 'x', 'x']] and f == 'org/joda/time/format/DateTimeFormatterBuilder.java' and any((
+    if get_chrs(n) in [[0, 'x', 'x'], [1, 'x', 'x']] and f == 'org/joda/time/format/DateTimeFormatterBuilder.java' and any((
             2498 <= n <= 2510,
     )):
         print "Warning -- Special casing enum field desugaring : %s:%d " % (f , n)
@@ -398,6 +399,9 @@ def setup_tgs(input, hostname, pid):
             redo=redo,
             other_keys=[],
     ) as worklist:
+        files_i_will_want = [[tool, project, version, test] for tool in tools for (test, _) in worklist]
+        prefetch(files_i_will_want)
+
         for test, callback in worklist:
             with refresh_dir(work_dir_path, cleanup=True):
                 print test
