@@ -41,6 +41,8 @@ def _requeue(r, fq, job_id, to_q, timeout=None, action=False):
         if action:
             # Delete it from the failed queue (raise an error if that failed)
             if fq.remove(job) == 0:
+                import ipdb
+                ipdb.set_trace()
                 raise InvalidJobOperationError('Cannot requeue non-failed jobs.')
 
             job.set_status(Status.QUEUED)
@@ -54,7 +56,11 @@ def _requeue(r, fq, job_id, to_q, timeout=None, action=False):
 
 def requeue(options, job_list=[]):
     r = redis.StrictRedis.from_url(REDIS_URL_RQ)
-    fq = get_failed_queue(connection=r)
+
+    if options.source:
+        fq = Queue(options.source, connection=r)
+    else:
+        fq = get_failed_queue(connection=r)
     print fq
     for job in job_list:
         _requeue(r, fq, job_id=job, to_q=options.to_q, timeout=options.timeout, action=options.action)
@@ -99,6 +105,7 @@ def list_regexp(options):
 if __name__ == "__main__":
     parser = OptionParser()
     parser.add_option("-q", "--queue", dest="to_q", action="store", type="string", default="default")
+    parser.add_option("-S", "--source", dest="source", action="store", type="string", default=None)
     parser.add_option("-t", "--timeout", dest="timeout", action="store", type="int", default=None)
     parser.add_option("-j", "--job", dest="job", action="store", type="string", default=None)
     parser.add_option("-J", "--job-file", dest="job_file", action="store", type="string", default=None)
