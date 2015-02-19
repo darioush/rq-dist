@@ -22,6 +22,7 @@ terms_only = {}
 branches_only = {}
 access_method = {}
 bc_unreachable = {}
+cobertura_is_init = {}
 
 def get_tgs_cobertura_raw(tar):
     f = tar.extractfile('coverage/coverage.xml')
@@ -54,6 +55,7 @@ def get_tgs_cobertura(tar):
         inits[key] = 1 if is_init else 0
         access_method[key] = 1 if is_access else 0
         clinits[key] = 1 if is_clinit else 0
+        cobertura_is_init[key] = inits[key]
     return tgs
 
 
@@ -156,9 +158,9 @@ def get_tgs_codecover_raw(tar):
                 len(xpath.find('span[contains(@class, "%s_Coverage")]' % token, line)) == 0
                 for token in ("Loop", "Branch", "Statement", "Operator")
         )
-        branches_only = all(
+        branches_only = all( ## Terms are allowed too, e.g., } else if { ... 
                 len(xpath.find('span[contains(@class, "%s_Coverage")]' % token, line)) == 0
-                for token in ("Loop", "Term", "Statement", "Operator")
+                for token in ("Loop", "Statement", "Operator")
         )
 
 
@@ -245,10 +247,28 @@ def known_exception(f, n, tgs, test):
     def get_chrs(n):
         return [tgs[tool].get((f, n), 'x') for tool in ['cobertura', 'codecover', 'jmockit']]
 
-    if get_chrs(n) == [0, 1, 0] and test in [
+    if get_chrs(n) == [1, 0 ,1] and f == 'org/joda/time/DateTimeZone.java' and any((
+            123 <= n <= 224,
+            290 <= n <= 315,
+            316 <= n <= 349,
+            544 <= n <= 626,
+    )):
+        print "Warning -- codecover messes with static TZ %s:%d" % (f, n)
+        return True
+
+    if get_chrs(n) == [1, 0, 1] and cobertura_is_init[(f, n)] and get_chrs(n+1) == [0, 'x', 0]:
+        print "Warning -- super call from init has weird bytecode desugaring: %s:%d" % (f, n)
+        return True
+
+    if get_chrs(n) == [0, 1, 0] and (test in [
             'org.apache.commons.lang.enums.ValuedEnumTest::testCompareTo_classloader_equal',
             'org.apache.commons.lang.enums.ValuedEnumTest::testCompareTo_classloader_different',
-    ]:
+    ] or
+        any([
+            (f, n) == ('org/joda/time/chrono/GJChronology.java', 440),  ## invoked from <CLINIT>
+            test.partition('::')[0] == 'org.joda.time.TestDateTime_Basics' and (f, n) == ('org/joda/time/chrono/GJChronology.java', 297), ## issue with compile I haven't figured out exactly?!
+        ])
+    ):
         print "Warning -- in these cases class loader is messed with and cobertura and jmockit are wrong. %s:%d" % (f, n)
         return True
 
@@ -285,11 +305,19 @@ def known_exception(f, n, tgs, test):
         ('org/apache/commons/lang3/time/DateUtils.java', 1821),
         ('org/apache/commons/lang3/math/Fraction.java', 40),
         ('org/joda/time/field/UnsupportedDurationField.java', 32),
+        ('org/joda/time/base/BaseSingleFieldPeriod.java', 46),
+        ('org/joda/time/LocalDate.java', 82),
+        ('org/joda/time/LocalDateTime.java', 80),
+        ('org/joda/time/format/DateTimeParserBucket.java', 449),
     ]:
         print "Warning -- Special casing Iterator / Comparable Object next Method desugarizartion: %s:%d" % (f, n)
         return True
 
-    return False
+    if get_chrs(n) in [[0, 'x', 'x']] and f == 'org/joda/time/format/DateTimeFormatterBuilder.java' and any((
+            2498 <= n <= 2510,
+    )):
+        print "Warning -- Special casing enum field desugaring : %s:%d " % (f , n)
+        return True
 
 # bundle = [qm, project, version]
 def pp_tgs(r, bundle, test, tgs, tools, verbose=0):
