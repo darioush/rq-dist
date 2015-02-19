@@ -266,7 +266,8 @@ def known_exception(f, n, tgs, test):
     ] or
         any([
             (f, n) == ('org/joda/time/chrono/GJChronology.java', 440),  ## invoked from <CLINIT>
-            test.partition('::')[0] == 'org.joda.time.TestDateTime_Basics' and (f, n) == ('org/joda/time/chrono/GJChronology.java', 297), ## issue with compile I haven't figured out exactly?!
+            (f, n) == ('org/joda/time/chrono/GJChronology.java', 297), ## issue with compile I haven't figured out exactly?!
+            (f, n) == ('org/joda/time/chrono/GJChronology.java', 299), ## issue with compile I haven't figured out exactly?!
         ])
     ):
         print "Warning -- in these cases class loader is messed with and cobertura and jmockit are wrong. %s:%d" % (f, n)
