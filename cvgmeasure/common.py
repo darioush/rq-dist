@@ -6,7 +6,7 @@ from rq import get_current_job, Worker
 from cStringIO import StringIO
 from rq.job import NoSuchJobError
 
-from cvgmeasure.conf import REDIS_PREFIX, DATA_PREFIX
+from cvgmeasure.conf import REDIS_PREFIX, DATA_PREFIX, TMP_PREFIX
 
 class Tee(object):
     def __init__(self, a, b):
@@ -69,6 +69,9 @@ def mk_key(key, bundle, prefix=REDIS_PREFIX):
 
 def mk_data_key(key, bundle, prefix=DATA_PREFIX):
     return mk_key(key, bundle, prefix=prefix)
+
+def mk_tmp_key(key, bundle, prefix=TMP_PREFIX):
+    return mk_key(key, bundle, prefix=TMP_PREFIX)
 
 def put_list(r, key, bundle, list):
     _key = mk_key(key, bundle)

@@ -86,7 +86,10 @@ def list_timeouts(options):
 
 def list_regexp(options):
     r = redis.StrictRedis.from_url(REDIS_URL_RQ)
-    fq = get_failed_queue(connection=r)
+    if options.source:
+        fq = Queue(options.source, connection=r)
+    else:
+        fq = get_failed_queue(connection=r)
     def get_timeout(job):
         reason = job.exc_info.split('\n')[-2:-1]
         for r in reason:
@@ -99,7 +102,12 @@ def list_regexp(options):
     timeouted_jobs = [job for job in jobs if get_timeout(job)]
 
     for job in timeouted_jobs:
-        print job.id
+        if options.descr_regexp:
+            match = re.search(options.descr_regexp, job.description)
+            if match:
+                print job.id
+        else:
+            print job.id
 
 
 if __name__ == "__main__":
@@ -113,6 +121,7 @@ if __name__ == "__main__":
     parser.add_option("-a", "--commit", dest="action", action="store_true", default=False)
     parser.add_option("-l", "--list-timeouts", dest="list", action="store_true", default=False)
     parser.add_option("-g", "--list-regexp", dest="regexp", action="store", default=None)
+    parser.add_option("-G", "--descr-regexp", dest="descr_regexp", action="store", default=None)
 
     (options, args) = parser.parse_args(sys.argv[1:])
 
