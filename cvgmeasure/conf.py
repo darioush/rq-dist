@@ -6,9 +6,10 @@ TMP_PREFIX = 'temp'
 REDIS_URL_RQ = 'redis://monarch.cs.washington.edu:6379/0'
 REDIS_URL_TG = 'redis://monarch.cs.washington.edu:6379/2'
 
-SCHOOL = set(('recycle', 'bicycle', 'tricycle', 'godwit', 'buffalo'))
-MONARCH = set(('monarch',))
-DEFAULT = object()
+SCHOOL  = lambda host: host in set(('recycle', 'bicycle', 'tricycle', 'godwit', 'buffalo'))
+MONARCH = lambda host: host in set(('monarch',))
+AWS     = lambda host: host.startswith('ip-')
+DEFAULT = lambda host: True
 
 config = {
     'work_dir': [
@@ -36,6 +37,11 @@ config = {
             MONARCH,
             None,
             ['/homes/gws/darioush/defects4j/framework/bin'],
+        ),
+        (
+            AWS,
+            None,
+            ['/home/ec2-user/defects4j/framework/bin'],
         ),
         (
             DEFAULT,
@@ -86,7 +92,7 @@ workers = {
 
 def get_property(property, hostname=None, pid=None):
     for (group, fn, default) in config.get(property, []):
-        if group is DEFAULT or hostname in group:
+        if group(hostname):
             if fn is not None and (hostname or pid):
                 return fn(hostname, pid)
             else:
