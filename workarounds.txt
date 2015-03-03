@@ -1,0 +1,6 @@
+There is a mismatch in some class loading issues with Lang.
+If a forked process runs the tests, some StringBuilder things fail.
+This has not been an issue in the d4j study because we have run tests
+in unforked mode.
+
+Some coverage tools require forked mode, so this becomes an issue for us.
