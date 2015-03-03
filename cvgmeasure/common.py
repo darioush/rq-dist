@@ -8,6 +8,22 @@ from rq.job import NoSuchJobError
 
 from cvgmeasure.conf import REDIS_PREFIX, DATA_PREFIX, TMP_PREFIX
 
+def get_fun(fun_dotted):
+    module_name = '.'.join(fun_dotted.split('.')[:-1])
+    fun_name    = fun_dotted.split('.')[-1]
+    return getattr(importlib.import_module(module_name), fun_name)
+
+def doQ(q, fun_dotted, json_str, timeout, print_only):
+    if print_only:
+        print q.name, '<-', (fun_dotted, (json_str,), timeout)
+    else:
+        return q.enqueue_call(
+                func=fun_dotted,
+                args=(json_str,),
+                timeout=timeout
+        )
+#####
+
 class Tee(object):
     def __init__(self, a, b):
         self.a, self.b = a, b

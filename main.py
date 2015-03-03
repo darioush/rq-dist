@@ -6,29 +6,13 @@ from optparse import OptionParser
 from rq import Queue
 from redis import StrictRedis
 
-from cvgmeasure.common import mk_key
+from cvgmeasure.common import mk_key, get_fun, doQ
 from cvgmeasure.conf import REDIS_URL_RQ, get_property
 from cvgmeasure.d4 import get_num_bugs, PROJECTS
-
-def get_fun(fun_dotted):
-    module_name = '.'.join(fun_dotted.split('.')[:-1])
-    fun_name    = fun_dotted.split('.')[-1]
-    return getattr(importlib.import_module(module_name), fun_name)
 
 def single_run(fun_dotted, json_str, **kwargs):
     my_function = get_fun(fun_dotted)
     my_function(json.loads(json_str))
-
-
-def doQ(q, fun_dotted, json_str, timeout, print_only):
-    if print_only:
-        print q.name, '<-', (fun_dotted, (json_str,), timeout)
-    else:
-        return q.enqueue_call(
-                func=fun_dotted,
-                args=(json_str,),
-                timeout=timeout
-        )
 
 def is_ok(i, v):
     min, _, max = v.partition("-")

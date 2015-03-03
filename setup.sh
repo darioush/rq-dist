@@ -26,8 +26,20 @@ function Popd {
 
 # Step 0: Install system packages
 if [ -n "$is_aws" ]; then
+    swap=`/sbin/swapon -s`;
+    if [ -z "$swap" ]; then
+        echo "Creating swap...";
+        if [ -e "/dev/sdb" ]; then
+            sudo /sbin/mkswap /dev/sdb
+            sudo /sbin/swapon /dev/sdb
+        else
+            sudo /bin/dd if=/dev/zero of=/var/swap.1 bs=1M count=2048
+            sudo /sbin/mkswap /var/swap.1
+            sudo /sbin/swapon /var/swap.1
+        fi
+    fi
     sudo yum --quiet updateinfo >/dev/null
-    sudo yum -y --quiet install git subversion python27 python27-setuptools python27-devel
+    sudo yum -y --quiet install git subversion python27 python27-setuptools python27-devel patch
     sudo easy_install-2.7 virtualenv
     progress "+sys"
 else
