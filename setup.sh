@@ -5,7 +5,7 @@ set -e
 dir=$1
 d4jdir=$2
 gituser=$3
-gitpass=$4
+gitpassword=$4
 is_aws=$5
 
 RQ_DIST="darioush/rq-dist"
@@ -13,13 +13,22 @@ D4J="uwplse/defects4j"
 D4J_BRANCH="coverage_paper"
 
 function progress {
-   echo "$1";
+    echo "*** $1";
+}
+
+function Pushd {
+    pushd $1 > /dev/null;
+}
+
+function Popd {
+    popd > /dev/null
 }
 
 # Step 0: Install system packages
 if [ -n "$is_aws" ]; then
     sudo yum --quiet updateinfo >/dev/null
-    sudo yum -y --quiet install git subversion python-devel python-virtualenv
+    sudo yum -y --quiet install git subversion python27 python27-setuptools python27-devel
+    sudo easy_install-2.7 virtualenv
     progress "+sys"
 else
     progress "-sys"
@@ -27,38 +36,42 @@ fi
 
 # Step 1: Clone / update code rq-dist repository
 if [ -e $dir ]; then
-    pushd $dir
+    Pushd $dir
         git pull origin
-    popd
+    Popd
     progress "-rqdist"
 else
     git clone "http://github.com/$RQ_DIST" $dir
-    pushd $dir
-        virtualenv env
-    popd
     progress "+rqdist"
 fi
 
 # Step 2: Update venv
-pushd $dir
+if [ -e "$dir/env" ]; then
+    echo; # skip
+else
+    Pushd $dir
+        virtualenv env
+    Popd
+fi
+Pushd $dir
     ./update-venv.sh
     progress "+venv"
-popd
+Popd
 
 # Step 3: Clone d4j repository
 if [ -e $d4jdir ]; then
-    pushd $d4jdir
+    Pushd $d4jdir
         git pull origin
-    popd
+    Popd
     progress "-d4jclone"
 else
-    git clone -b $D4J_BRANCH "https:/${gituser}:${gitpassword}@github.com/$D4J" $d4jdir
+    git clone -b $D4J_BRANCH "https://${gituser}:${gitpassword}@github.com/$D4J" $d4jdir
     progress "+d4jclone"
 fi
 
 # Step 4: Check for repos
-pushd $d4jdir
+Pushd $d4jdir
     ./get-repos.sh
     progress "+repos"
-popd
+Popd
 
