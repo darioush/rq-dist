@@ -72,7 +72,7 @@ def monitor_job(input, hostname, pid):
             mon_input = {}
             mon_input.update(input)
             mon_input.update({
-                list_key: chunk
+                list_key: chunk,
                 'monitor_queue': monitor_queue + '_'
             })
             doQ(
