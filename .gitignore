@@ -5,3 +5,4 @@ nohup.*
 *.swp
 *.tar.gz
 jobfiles/
+hosts.json
