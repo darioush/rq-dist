@@ -39,7 +39,7 @@ if [ -n "$is_aws" ]; then
         fi
     fi
     sudo yum --quiet updateinfo >/dev/null
-    sudo yum -y --quiet install git subversion python27 python27-setuptools python27-devel patch
+    sudo yum -y --quiet install git subversion python27 python27-setuptools python27-devel patch htop
     sudo easy_install-2.7 virtualenv
     progress "+sys"
 else

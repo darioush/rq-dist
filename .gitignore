@@ -4,3 +4,4 @@ env/
 nohup.*
 *.swp
 *.tar.gz
+jobfiles/

@@ -16,14 +16,14 @@ def is_local(m, worker):
     return machine == m
 
 def teardown(machine):
-    rem = SshMachine(workers[machine]['hostname'])
-    dir = rem.path(workers[machine]['rqdir'])
+    rem = SshMachine(workers(machine)['hostname'])
+    dir = rem.path(workers(machine)['rqdir'])
     print "REMOVING DIR.."
     rem["rm"]("-rf", dir)
 
 def setup(machine):
-    rem = SshMachine(workers[machine]['hostname'])
-    dir = rem.path(workers[machine]['rqdir'])
+    rem = SshMachine(workers(machine)['hostname'])
+    dir = rem.path(workers(machine)['rqdir'])
     if not dir.exists():
         print "CLONING REPO..."
         rem["git"]("clone", "http://github.com/darioush/rq-dist", dir)
@@ -50,7 +50,7 @@ def setup(machine):
     dst_d4j = '/'.join(get_property('d4j_path', machine, 0)[0].split('/')[:-3])
     print "RSYNCING FOR DEFECTS4J "
     rsync = local['rsync']['-avz', '--exclude', '.git', '--exclude', 'project_repos'][my_d4j]
-    rsync('%s:%s' % (workers[machine]['hostname'], dst_d4j))
+    rsync('%s:%s' % (workers(machine)['hostname'], dst_d4j))
 
     rem_d4j = rem.path(dst_d4j) / 'defects4j'
     repos_dir = rem_d4j / 'project_repos'
@@ -93,8 +93,9 @@ def main(machine, instances, queues=['high', 'default', 'low']):
         print '\n'.join(map(lambda m: "%s\t%s" % (m.name, m.get_state()),
             machine_workers))
 
-    rem = SshMachine(workers[machine]['hostname'])
-    dir = rem.path(workers[machine]['rqdir'])
+    machine_info = workers(machine)
+    rem = SshMachine(machine_info['hostname'], **machine_info.get('kwargs', {}))
+    dir = rem.path(machine_info['rqdir'])
 
     with rem.cwd(dir):
         for i in xrange(0, instances - len(machine_workers)):
@@ -116,7 +117,8 @@ def killall(machine):
 
 def kill(worker):
     machine, _, pid = worker.partition('.')
-    rem = SshMachine(workers[machine]['hostname'])
+    machine_info = workers(machine)
+    rem = SshMachine(machine_info['hostname'], **machine_info.get('kwargs', {}))
     try:
         rem['kill'](pid)
         print "Killed %s" % worker

@@ -1,7 +1,9 @@
+import json
 
 REDIS_PREFIX = 'results'
 DATA_PREFIX = 'data'
 TMP_PREFIX = 'temp'
+KEYFILE = '/homes/gws/darioush/mykeypair.pem'
 
 REDIS_URL_RQ = 'redis://monarch.cs.washington.edu:6379/0'
 REDIS_URL_TG = 'redis://monarch.cs.washington.edu:6379/2'
@@ -58,7 +60,13 @@ config = {
 
 }
 
-workers = {
+def get_aws_info():
+    fn = 'hosts.json'
+    with open(fn) as f:
+        return json.loads(f.read())
+
+def workers(machine):
+    known = {
         'monarch': {
             'hostname': 'monarch.cs.washington.edu',
             'rqdir': '/scratch/darioush/rq',
@@ -88,7 +96,24 @@ workers = {
             'hostname': 'buffalo.cs.washington.edu',
             'rqdir': '/scratch/darioush/rq',
         },
-}
+    }
+    if machine in known:
+        return machine[known]
+
+    if machine.startswith('ip-'):
+        aws_info = get_aws_info()
+        this_machine = [item for item in aws_info if item['private'].partition('.')[0] == machine]
+        assert len(this_machine) == 1
+        this_machine = this_machine[0]
+        return {
+            'hostname': this_machine['public'],
+            'rqdir': '/home/ec2-user/rq',
+            'kwargs': {
+                'keyfile': KEYFILE,
+                'user': 'ec2-user',
+            }
+        }
+
 
 def get_property(property, hostname=None, pid=None):
     for (group, fn, default) in config.get(property, []):
