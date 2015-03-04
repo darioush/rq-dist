@@ -13,6 +13,7 @@ logger.setLevel(logging.WARNING)
 def main(fn, key_file):
     with open(fn) as f:
         hosts = [item['public'] for item in json.loads(f.read())]
+    print len(hosts)
 
     print hosts
     if key_file is not None:
@@ -23,8 +24,9 @@ def main(fn, key_file):
 
     client.copy_file('setup.sh', 'setup.sh')
     client.pool.join()
+    print "copied"
 
-    output = client.run_command('./setup.sh rq defects4j darioush password00 yes')
+    output = client.run_command('bash setup.sh rq defects4j darioush password00 yes')
     for host in output:
         print "Host: {0}".format(host)
         PREFIX = "*** "
