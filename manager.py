@@ -126,7 +126,9 @@ def kill(worker):
         print "WARNING:: Couldn't kill %s" % worker
 
 def listhosts():
-    print '\n'.join(workers.keys())
+    r = StrictRedis.from_url(REDIS_URL_RQ)
+    machines = list(set([worker.name.partition('.')[0] for worker in Worker.all(connection=r)]))
+    print '\n'.join(machines)
 
 if __name__ == "__main__":
     if sys.argv[1] == 'spawn':

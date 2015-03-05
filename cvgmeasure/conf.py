@@ -98,7 +98,7 @@ def workers(machine):
         },
     }
     if machine in known:
-        return machine[known]
+        return known[machine]
 
     if machine.startswith('ip-'):
         aws_info = get_aws_info()
