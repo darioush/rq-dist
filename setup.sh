@@ -39,12 +39,22 @@ if [ -n "$is_aws" ]; then
         fi
     fi
     sudo yum --quiet updateinfo >/dev/null
-    sudo yum -y --quiet install git subversion python27 python27-setuptools python27-devel patch htop
+    sudo yum -y --quiet install git subversion python27 python27-setuptools python27-devel patch htop java-1.7.0-openjdk-devel
     sudo easy_install-2.7 virtualenv
     progress "+sys"
 else
     progress "-sys"
 fi
+
+mvnpath=`which mvn 2>/dev/null || true`;
+if [ -z "$mvnpath" ]; then
+    wget http://homes.cs.washington.edu/~darioush/apache-maven-3.0.5-bin.tar.gz
+    sudo tar xf apache-maven-3.0.5-bin.tar.gz -C /usr/local/ --strip 1
+    mvn --version
+    progress "+mvn";
+else
+    progress "-mvn";
+fi;
 
 # Step 1: Clone / update code rq-dist repository
 if [ -e $dir ]; then
