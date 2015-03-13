@@ -102,6 +102,7 @@ def test_lists_gen(input, hostname, pid):
             with add_to_path(d4j_path):
                 with checkout(project, version, work_dir_path / 'checkout'):
                     gen_tool, _, suite_id = suite.partition('.')
+                    d4()('compile')
                     fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
                     if fetch_result not in ['ok', 'missing', 'empty']:
                         raise Exception('Unexpected return value from d4 fetch-generated-tests')
