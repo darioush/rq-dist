@@ -110,8 +110,8 @@ def test_lists_gen(input, hostname, pid):
                         d4()('compile', '-g')
                         test_methods = d4()('list-tests', '-g').rstrip().split('\n')
 
-    method_len = put_list(r, 'test-methods', [project, version, suite], test_methods)
-    assert method_len == len(test_methods)
+                        method_len = put_list(r, 'test-methods', [project, version, suite], test_methods)
+                        assert method_len == len(test_methods)
 
     return "Success"
 
