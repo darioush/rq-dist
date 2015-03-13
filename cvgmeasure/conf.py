@@ -9,7 +9,7 @@ KEYFILE = '/homes/gws/darioush/mykeypair.pem'
 REDIS_URL_RQ = 'redis://nest.cs.washington.edu:6379/0'
 REDIS_URL_TG = 'redis://monarch.cs.washington.edu:6379/2'
 
-SCHOOL  = lambda host: host in set(('monarch', 'recycle', 'bicycle', 'tricycle', 'godwit', 'buffalo'))
+SCHOOL  = lambda host: host in set(('monarch', 'recycle', 'bicycle', 'tricycle', 'godwit', 'buffalo', 'nest'))
 MONARCH = lambda host: host in set(('monarch',))
 NEST = lambda host: host in set(('nest',))
 AWS     = lambda host: host.startswith('ip-')
@@ -114,6 +114,11 @@ def workers(machine):
 
         'buffalo': {
             'hostname': 'buffalo.cs.washington.edu',
+            'rqdir': '/scratch/darioush/rq',
+        },
+
+        'nest': {
+            'hostname': 'nest.cs.washington.edu',
             'rqdir': '/scratch/darioush/rq',
         },
     }

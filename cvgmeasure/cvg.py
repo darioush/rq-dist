@@ -8,7 +8,7 @@ from redis import StrictRedis
 
 from cvgmeasure.common import job_decorator
 from cvgmeasure.common import check_key, filter_key_list, mk_key
-from cvgmeasure.common import put_list, put_into_hash
+from cvgmeasure.common import put_list, put_into_hash, put_key
 from cvgmeasure.conf import get_property
 from cvgmeasure.d4 import d4, checkout, refresh_dir, get_coverage
 from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_str, add_to_path, compile_if_needed

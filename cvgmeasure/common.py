@@ -96,7 +96,7 @@ def put_list(r, key, bundle, list):
 
 def put_key(r, key, bundle, value):
     _key = mk_key(key, bundle)
-    r.set(key, value)
+    r.set(_key, value)
 
 def put_into_hash(r, key, bundle, hashkey, data):
     _key = mk_key(key, bundle)
