@@ -1,20 +1,21 @@
-arrow==0.5.0
+awscli==1.7.13
+bcdoc==0.13.0
+botocore==0.94.0
 click==3.3
-Flask==0.10.1
+colorama==0.3.3
+docutils==0.12
 ipdb==0.8
 ipython==2.3.1
-itsdangerous==0.24
-Jinja2==2.7.3
-MarkupSafe==0.23
+jmespath==0.6.1
 plumbum==1.4.2
 --allow-external py-dom-xpath
 --allow-unverified py-dom-xpath
+py==1.4.26
 py-dom-xpath==0.1
+pyasn1==0.1.7
 python-dateutil==2.4.0
 redis==2.10.3
-rq==0.4.6
-rq-dashboard==0.3.4
-simplejson==3.6.5
+rq==0.5.1
+rsa==3.1.4
 six==1.9.0
-times==0.7
-Werkzeug==0.9.6
+virtualenv==12.0.7

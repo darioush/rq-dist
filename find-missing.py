@@ -27,7 +27,7 @@ def main(project, version):
                 'version': version
             }
         if missings:
-            print "python main.py q cvgmeasure.nocover_test_cases.test_cvg_methods -j '%s' -t 1800 -q localH --commit" % json.dumps(command)
+            print "python main.py q cvgmeasure.cvg.test_cvg_methods -j '%s' -t 1800 -q localH --commit" % json.dumps(command)
 
 
 if __name__ == "__main__":

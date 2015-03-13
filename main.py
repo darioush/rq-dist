@@ -8,22 +8,11 @@ from redis import StrictRedis
 
 from cvgmeasure.common import mk_key, get_fun, doQ
 from cvgmeasure.conf import REDIS_URL_RQ, get_property
-from cvgmeasure.d4 import get_num_bugs, PROJECTS
+from cvgmeasure.d4 import get_num_bugs, PROJECTS, iter_versions
 
 def single_run(fun_dotted, json_str, **kwargs):
     my_function = get_fun(fun_dotted)
     my_function(json.loads(json_str))
-
-def is_ok(i, v):
-    min, _, max = v.partition("-")
-
-    if max == '':
-        return i == int(min)
-
-    if max == 'MAX':
-        return int(min) <= i
-
-    return int(min) <= i <= int(max)
 
 def single_enqueue(fun_dotted, json_str, queue_name='default', timeout=10000, print_only=False, **kwargs):
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
@@ -32,18 +21,11 @@ def single_enqueue(fun_dotted, json_str, queue_name='default', timeout=10000, pr
 def enqueue_bundles(fun_dotted, json_str, queue_name='default',
         timeout=180, print_only=False, restrict_project=None, restrict_version=None, **kwargs):
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
-    for project in PROJECTS:
-        if restrict_project and project not in restrict_project:
-            continue
-
-        for i in xrange(1, get_num_bugs(project) + 1):
-            if restrict_version and not any(is_ok(i, v) for v in restrict_version):
-                continue
-
-            input = {'project': project, 'version': i}
-            additionals = json.loads(json_str)
-            input.update(additionals)
-            doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
+    for project, i in iter_versions(restrict_project, restrict_version):
+        input = {'project': project, 'version': i}
+        additionals = json.loads(json_str)
+        input.update(additionals)
+        doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
 
 def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
         source_key,
@@ -58,45 +40,39 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
 
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
     r = StrictRedis.from_url(get_property('redis_url'))
-    for project in PROJECTS:
-        if restrict_project and project not in restrict_project:
-            continue
-        for i in xrange(1, get_num_bugs(project) + 1):
-            if restrict_version and not any(is_ok(i, v) for v in restrict_version):
-                continue
+    for project, i in iter_versions(restrict_project, restrict_version):
+        key = mk_key(source_key, [project, i])
+        size = r.llen(key)
+        if bundle_max is not None:
+            size = min(size, bundle_max)
 
-            key = mk_key(source_key, [project, i])
-            size = r.llen(key)
-            if bundle_max is not None:
-                size = min(size, bundle_max)
+        already_computed = {}
+        if alternate_key and check_key:
+            for alternate in alternates:
+                _key = mk_key(check_key, [alternate, project, i, 'bundles'])
+                already_computed[alternate] = set(r.hkeys(_key))
 
-            already_computed = {}
-            if alternate_key and check_key:
+        for j in xrange(bundle_offset, size, bundle_size):
+            bundle = r.lrange(key, j, j+bundle_size-1)
+
+            if alternate_key:
                 for alternate in alternates:
-                    _key = mk_key(check_key, [alternate, project, i, 'bundles'])
-                    already_computed[alternate] = set(r.hkeys(_key))
-
-            for j in xrange(bundle_offset, size, bundle_size):
-                bundle = r.lrange(key, j, j+bundle_size-1)
-
-                if alternate_key:
-                    for alternate in alternates:
-                        input = {'project': project, 'version': i, bundle_key: bundle, alternate_key: alternate}
-                        additionals = json.loads(json_str)
-                        input.update(additionals)
-                        if check_key:
-                            filtered_list = [item for item in bundle if item not in already_computed[alternate]]
-                            if len(filtered_list) == 0:
-                                #print "Skipping empty bundle"
-                                continue
-                            input[bundle_key] = filtered_list
-
-                        doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
-                else:
-                    input = {'project': project, 'version': i, bundle_key: bundle}
+                    input = {'project': project, 'version': i, bundle_key: bundle, alternate_key: alternate}
                     additionals = json.loads(json_str)
                     input.update(additionals)
+                    if check_key:
+                        filtered_list = [item for item in bundle if item not in already_computed[alternate]]
+                        if len(filtered_list) == 0:
+                            #print "Skipping empty bundle"
+                            continue
+                        input[bundle_key] = filtered_list
+
                     doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
+            else:
+                input = {'project': project, 'version': i, bundle_key: bundle}
+                additionals = json.loads(json_str)
+                input.update(additionals)
+                doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
 
 if __name__ == "__main__":
 

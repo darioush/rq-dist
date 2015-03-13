@@ -94,6 +94,10 @@ def put_list(r, key, bundle, list):
     r.delete(_key)
     return r.rpush(_key, *list)
 
+def put_key(r, key, bundle, value):
+    _key = mk_key(key, bundle)
+    r.set(key, value)
+
 def put_into_hash(r, key, bundle, hashkey, data):
     _key = mk_key(key, bundle)
     if data is None:

@@ -36,9 +36,13 @@ def checkout(project, version, to):
         yield
 
 
-def get_num_bugs(project):
+def get_num_bugs(project, old=False):
     if not project in PROJECTS:
         raise Exception("Bad project")
+
+    if old:
+        return {'Chart': 26, 'Closure': 133, 'Time': 27, 'Math': 106, 'Lang': 65}[project]
+
     return int(d4()('info', '-p', project, '-c').rstrip())
 
 class CoverageCalculationException(Exception):
@@ -136,3 +140,22 @@ def get_modified_sources(project, version):
     directory = lines[0]
     files = lines[1:]
     return (directory, files)
+
+####
+def _is_ok(i, v):
+    min, _, max = v.partition("-")
+    if max == '':
+        return i == int(min)
+    if max == 'MAX':
+        return int(min) <= i
+    return int(min) <= i <= int(max)
+
+def iter_versions(restrict_project=[], restrict_version=[], old=False):
+    for project in PROJECTS:
+        if restrict_project and project not in restrict_project:
+            continue
+        for i in xrange(1, get_num_bugs(project, old) + 1):
+            if restrict_version and not any(_is_ok(i, v) for v in restrict_version):
+                continue
+            yield project, i
+

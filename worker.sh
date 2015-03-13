@@ -9,4 +9,4 @@ else
 fi
 
 source env/bin/activate
-nohup rqworker --host monarch.cs.washington.edu $queues >/dev/null 2>&1 &
+nohup rqworker --host nest.cs.washington.edu $queues >/dev/null 2>&1 &
