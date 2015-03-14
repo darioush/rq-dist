@@ -89,6 +89,10 @@ def mk_data_key(key, bundle, prefix=DATA_PREFIX):
 def mk_tmp_key(key, bundle, prefix=TMP_PREFIX):
     return mk_key(key, bundle, prefix=TMP_PREFIX)
 
+def put_into_set(r, key, bundle, member):
+    _key = mk_key(key, bundle)
+    return r.sadd(_key, member)
+
 def put_list(r, key, bundle, list):
     _key = mk_key(key, bundle)
     r.delete(_key)
@@ -96,15 +100,26 @@ def put_list(r, key, bundle, list):
 
 def put_key(r, key, bundle, value):
     _key = mk_key(key, bundle)
-    r.set(_key, value)
+    return r.set(_key, value)
+
+def inc_key(r, key, bundle, field, increment=1):
+    _key = mk_key(key, bundle)
+    return r.hincrby(_key, field, increment)
 
 def put_into_hash(r, key, bundle, hashkey, data):
     _key = mk_key(key, bundle)
     if data is None:
-        r.hdel(_key, hashkey)
+        return r.hdel(_key, hashkey)
     else:
-        r.hset(_key, hashkey, data)
+        return r.hset(_key, hashkey, data)
 
+def get_key(r, key, bundle, field, default=None):
+    _key = mk_key(key, bundle)
+    result = r.hget(_key, field)
+    if result is None:
+        return default
+    else:
+        return result
 
 @contextmanager
 def check_key(r, key, bundle, redo=False, other_keys=[]):

@@ -9,8 +9,9 @@ from redis import StrictRedis
 from cvgmeasure.common import job_decorator
 from cvgmeasure.common import check_key, filter_key_list, mk_key
 from cvgmeasure.common import put_list, put_into_hash, put_key
+from cvgmeasure.common import get_key, inc_key, put_into_set
 from cvgmeasure.conf import get_property
-from cvgmeasure.d4 import d4, checkout, refresh_dir, get_coverage
+from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage
 from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_str, add_to_path, compile_if_needed
 from cvgmeasure.d4 import is_empty, denominator_empty
 
@@ -114,6 +115,58 @@ def test_lists_gen(input, hostname, pid):
                         method_len = put_list(r, 'test-methods', [project, version, suite], test_methods)
                         assert method_len == len(test_methods)
 
+    return "Success"
+
+@job_decorator
+def run_tests_gen(input, hostname, pid):
+    project = input['project']
+    version = input['version']
+    suite   = input['suite']
+    passcnt = input['passcnt']
+    tests = input['tests']
+    redo    = input.get('redo', False)
+
+    work_dir, d4j_path, redis_url = map(
+            lambda property: get_property(property, hostname, pid),
+            ['work_dir', 'd4j_path', 'redis_url']
+    )
+
+    work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
+    print work_dir
+
+    r = StrictRedis.from_url(redis_url)
+    with filter_key_list(
+            r,
+            key='test-methods-exec',
+            bundle=['exec', project, version, suite],
+            list=tests,
+            redo=redo,
+            other_keys=[],
+    ) as worklist:
+        with refresh_dir(work_dir_path, cleanup=True):
+            with add_to_path(d4j_path):
+                with checkout(project, version, work_dir_path / 'checkout'):
+                    gen_tool, _, suite_id = suite.partition('.')
+                    d4()('compile')
+                    fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
+                    if fetch_result != "ok":
+                        raise Exception('Unexpected return value from d4 fetch-generated-tests')
+                    d4()('compile', '-g')
+
+                    for t, progress_callback in worklist:
+                        num_success = int(get_key(r, 'passcnt', [project, version, suite], t, default=0))
+                        num_runs = passcnt - num_success
+                        for run in xrange(0, num_runs):
+                            print "run {run}/{num_runs} of {t}".format(run=(run+1), num_runs=num_runs, t=t)
+                            fails = test(extra_args=['-g', '-t', t])
+                            if len(fails) == 0:
+                                inc_key(r, 'passcnt', [project, version, suite], t)
+                            elif len(fails) == 1:
+                                put_into_set(r, 'fail', ['exec', project, version, suite], t)
+                                break
+                            else:
+                                raise Exception('Bad code')
+                        progress_callback()
     return "Success"
 
 
