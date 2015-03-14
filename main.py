@@ -19,7 +19,7 @@ def single_enqueue(fun_dotted, json_str, queue_name='default', timeout=10000, pr
     doQ(q, fun_dotted, json_str, timeout, print_only)
 
 def enqueue_bundles(fun_dotted, json_str, queue_name='default',
-        timeout=180, print_only=False, restrict_project=None, restrict_version=None, **kwargs):
+        timeout=1800, print_only=False, restrict_project=None, restrict_version=None, **kwargs):
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
     for project, i in iter_versions(restrict_project, restrict_version):
         input = {'project': project, 'version': i}
@@ -28,9 +28,9 @@ def enqueue_bundles(fun_dotted, json_str, queue_name='default',
         doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
 
 def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
-        source_key,
+        source_key, tail_key=[],
         queue_name='default',
-        timeout=180, print_only=False, restrict_project=None, restrict_version=None,
+        timeout=1800, print_only=False, restrict_project=None, restrict_version=None,
         bundle_size=10, bundle_offset=0, bundle_max=None,
         alternates=None, alternate_key=None,
         check_key=None,
@@ -41,7 +41,7 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
     r = StrictRedis.from_url(get_property('redis_url'))
     for project, i in iter_versions(restrict_project, restrict_version):
-        key = mk_key(source_key, [project, i])
+        key = mk_key(source_key, [project, i] + tail_key)
         size = r.llen(key)
         if bundle_max is not None:
             size = min(size, bundle_max)
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     parser = OptionParser()
     parser.add_option("-q", "--queue", dest="queue_name", action="store", type="string", default="default")
     parser.add_option("-j", "--json", dest="json_str", action="store", type="string", default="{}")
-    parser.add_option("-t", "--timeout", dest="timeout", action="store", type="int", default=180)
+    parser.add_option("-t", "--timeout", dest="timeout", action="store", type="int", default=1800)
     parser.add_option("-b", "--bundle-size", dest="bundle_size", action="store", type="int", default=10)
     parser.add_option("-c", "--commit", dest="print_only", action="store_false", default=True)
     parser.add_option("-p", "--project", dest="restrict_project", action="append")
@@ -95,6 +95,7 @@ if __name__ == "__main__":
 
     parser.add_option("-Z", "--remove-completed", dest="check_key", action="store", type="string", default=None)
     parser.add_option("-S", "--source-key", dest="source_key", action="store", type="string")
+    parser.add_option("-T", "--tail-key", dest="tail_key", action="append")
 
     (options, args) = parser.parse_args(sys.argv[3:])
 
