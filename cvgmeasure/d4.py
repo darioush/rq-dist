@@ -54,20 +54,24 @@ def get_tts(project, version):
     return set(tts)
 
 
-def get_coverage(cvg_tool, tc):
+def get_coverage(cvg_tool, tc, generated=False):
     if cvg_tool == 'major':
         if tc == 'reset':
             tc = 'edu.washington.cs.emptyTest.EmptyTest::testNothing'
-        cvg = d4()['mutation', '-t']
-        output = cvg(tc)
+        cvg = d4()['mutation']
+        if generated:
+            cvg = cvg['-g']
+        output = cvg('-t', tc)
         regexps = {
                 r'\s*Mutants generated: (\d+)': 'mt',
                 r'\s*Mutants covered: (\d+)': 'mc',
                 r'\s*Mutants killed: (\d+)': 'mk',
         }
     else:
-        cvg = d4()['coverage', '-T', cvg_tool, '-t']
-        output = cvg(tc)
+        cvg = d4()['coverage', '-T', cvg_tool]
+        if generated:
+            cvg = cvg['-g']
+        output = cvg('-t', tc)
         regexps = {
                 r'Lines total: (\d+)': 'lt',
                 r'Lines covered: (\d+)': 'lc',
@@ -114,6 +118,13 @@ def get_coverage_files_to_save(cvg_tool):
         'major'    : ['exclude.txt', 'kill.csv', 'mutants.log', '.mutation.log', 'summary.csv', 'testMap.csv', 'mml/'],
     }[cvg_tool]
 
+
+@contextmanager
+def get_tar_gz_file(files, out='output.tar.gz'):
+    rm('-rf', out)
+    local['tar']['cfz', out](*files)
+    with open(out) as f:
+        yield f
 
 def get_tar_gz_str(files, out='output.tar.gz'):
     rm('-rf', out)

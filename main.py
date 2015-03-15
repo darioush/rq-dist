@@ -33,7 +33,7 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
         timeout=1800, print_only=False, restrict_project=None, restrict_version=None,
         bundle_size=10, bundle_offset=0, bundle_max=None,
         alternates=None, alternate_key=None,
-        check_key=None,
+        check_key=None, filter_function=None, filter_arg=None,
         **kwargs):
     if bundle_key is None:
         raise Exception("bundle key not provided [-k]")
@@ -49,11 +49,18 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
         already_computed = {}
         if alternate_key and check_key:
             for alternate in alternates:
-                _key = mk_key(check_key, [alternate, project, i, 'bundles'])
+                _key = mk_key(check_key, [alternate, project, i] + tail_key + ['bundles'])
                 already_computed[alternate] = set(r.hkeys(_key))
 
         for j in xrange(bundle_offset, size, bundle_size):
             bundle = r.lrange(key, j, j+bundle_size-1)
+
+            if filter_function is not None:
+                ff = get_fun(filter_function)
+                bundle = ff(r, project, i, filter_arg, bundle)
+
+            if len(bundle) == 0:
+                continue
 
             if alternate_key:
                 for alternate in alternates:
@@ -96,6 +103,8 @@ if __name__ == "__main__":
     parser.add_option("-Z", "--remove-completed", dest="check_key", action="store", type="string", default=None)
     parser.add_option("-S", "--source-key", dest="source_key", action="store", type="string")
     parser.add_option("-T", "--tail-key", dest="tail_key", action="append")
+    parser.add_option("-F", "--filter-function", dest="filter_function", action="store", type="string", default=None)
+    parser.add_option("-A", "--filter-arg", dest="filter_arg", action="store", type="string", default=None)
 
     (options, args) = parser.parse_args(sys.argv[3:])
 

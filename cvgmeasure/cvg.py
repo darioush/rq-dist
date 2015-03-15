@@ -1,6 +1,7 @@
 import os
 import json
 import socket
+import traceback
 
 from plumbum import local
 from plumbum.cmd import rm, mkdir, ls
@@ -12,8 +13,9 @@ from cvgmeasure.common import put_list, put_into_hash, put_key
 from cvgmeasure.common import get_key, inc_key, put_into_set
 from cvgmeasure.conf import get_property
 from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage
-from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_str, add_to_path, compile_if_needed
-from cvgmeasure.d4 import is_empty, denominator_empty
+from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_file, add_to_path, compile_if_needed
+from cvgmeasure.d4 import is_empty, denominator_empty, CoverageCalculationException
+from cvgmeasure.s3 import put_into_s3
 
 
 def test_list_special_case(tc):
@@ -102,8 +104,8 @@ def test_lists_gen(input, hostname, pid):
         with refresh_dir(work_dir_path, cleanup=True):
             with add_to_path(d4j_path):
                 with checkout(project, version, work_dir_path / 'checkout'):
-                    gen_tool, _, suite_id = suite.partition('.')
                     d4()('compile')
+                    gen_tool, _, suite_id = suite.partition('.')
                     fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
                     if fetch_result not in ['ok', 'missing', 'empty']:
                         raise Exception('Unexpected return value from d4 fetch-generated-tests')
@@ -123,7 +125,7 @@ def run_tests_gen(input, hostname, pid):
     version = input['version']
     suite   = input['suite']
     passcnt = input['passcnt']
-    tests = input['tests']
+    tests   = input['tests']
     redo    = input.get('redo', False)
 
     work_dir, d4j_path, redis_url = map(
@@ -146,8 +148,8 @@ def run_tests_gen(input, hostname, pid):
         with refresh_dir(work_dir_path, cleanup=True):
             with add_to_path(d4j_path):
                 with checkout(project, version, work_dir_path / 'checkout'):
-                    gen_tool, _, suite_id = suite.partition('.')
                     d4()('compile')
+                    gen_tool, _, suite_id = suite.partition('.')
                     fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
                     if fetch_result != "ok":
                         raise Exception('Unexpected return value from d4 fetch-generated-tests')
@@ -181,6 +183,7 @@ def find_agree_classes(input, hostname, pid):
         split_fun = lambda m: m.partition('::')[0],
     )
 
+
 @job_decorator
 def find_agree_methods(input, hostname, pid):
     extras = {'in_key' : 'test-methods-run-cvg-nonempty', 'out_key': 'test-methods-agree-cvg-nonempty'}
@@ -190,7 +193,6 @@ def find_agree_methods(input, hostname, pid):
         hostname,
         pid,
     )
-
 
 
 def handle_test_method_non_emptylists(input, hostname, pid, split_fun=lambda x: x):
@@ -227,9 +229,9 @@ def test_cvg_bundle(input, hostname, pid):
         input_key='test_classes',
         check_key='test-classes-checked-for-emptiness',
         result_key='test-classes-cvg',
-        files_key='test-classes-cvg-files',
         non_empty_key='test-classes-cvg-nonempty',
     )
+
 
 @job_decorator
 def test_cvg_methods(input, hostname, pid):
@@ -240,16 +242,33 @@ def test_cvg_methods(input, hostname, pid):
         input_key='test_methods',
         check_key='test-methods-run',
         result_key='test-methods-run-cvg',
-        files_key='test-methods-run-cvg-files',
         non_empty_key='test-methods-run-cvg-nonempty',
     )
 
 
-def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_key, files_key, non_empty_key):
-    project = input['project']
-    version = input['version']
+@job_decorator
+def generated_cvg(input, hostname, pid):
+    return handle_test_cvg_bundle(
+        input,
+        hostname,
+        pid,
+        input_key='tests',
+        check_key='test-methods-exec',
+        result_key='cvg',
+        non_empty_key='nonempty',
+        pass_count_key='passcnt',
+        fail_key='fail',
+        generated=True,
+    )
+
+
+def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_key, non_empty_key,
+        generated=False, pass_count_key=None, fail_key=None):
+    project  = input['project']
+    version  = input['version']
     cvg_tool = input['cvg_tool']
-    redo    = input.get('redo', False)
+    suite    = input['suite']
+    redo     = input.get('redo', False)
     test_classes = input[input_key]
 
     work_dir, d4j_path, redis_url = map(
@@ -262,13 +281,14 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_ke
 
     r = StrictRedis.from_url(redis_url)
 
+    empty, nonempty, fail = 0, 0, 0
     with filter_key_list(
             r,
             key=check_key,
-            bundle=[cvg_tool, project, version],
+            bundle=[cvg_tool, project, version, suite],
             list=test_classes,
             redo=redo,
-            other_keys=[result_key, files_key, non_empty_key],
+            other_keys=[result_key, non_empty_key],
     ) as worklist:
         with refresh_dir(work_dir_path, cleanup=True):
             with add_to_path(d4j_path):
@@ -280,23 +300,42 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_ke
                     assert is_empty(cvg_tool, results) # make sure result of reset is successful
                     assert not denominator_empty(cvg_tool, results)
 
+                    if generated:
+                        print "gen compile"
+                        gen_tool, _, suite_id = suite.partition('.')
+                        fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
+                        if fetch_result != "ok":
+                            raise Exception('Unexpected return value from d4 fetch-generated-tests')
+                        d4()('compile', '-g')
+
                     for tc, progress_callback in worklist:
+                        print tc
                         try:
-                            print tc
-                            results = get_coverage(cvg_tool, tc)
+                            results = get_coverage(cvg_tool, tc, generated=generated)
+                            if pass_count_key is not None:
+                                inc_key(r, pass_count_key, [project, version, suite], tc)
                             print results
-                            put_into_hash(r, result_key, [cvg_tool, project, version], tc,
-                                    json.dumps(results))
-                            put_into_hash(r, non_empty_key, [cvg_tool, project, version], tc,
-                                    None if is_empty(cvg_tool, results) else 1)
+                            put_into_hash(r, result_key, [cvg_tool, project, version, suite], tc, json.dumps(results))
 
-                            progress_callback()
-                        finally:
-                            file_list = get_coverage_files_to_save(cvg_tool)
-                            try:
-                                files = get_tar_gz_str(file_list)
-                                put_into_hash(r, files_key, [cvg_tool, project, version], tc,
-                                    files)
-                            except:
-                                pass
+                            if is_empty(cvg_tool, results):
+                                empty += 1
+                                put_into_hash(r, non_empty_key, [cvg_tool, project, version, suite], tc, None)
+                            else:
+                                nonempty += 1
+                                put_into_hash(r, non_empty_key, [cvg_tool, project, version, suite], tc, 1)
+                                file_list = get_coverage_files_to_save(cvg_tool)
+                                try:
+                                    with get_tar_gz_file(file_list) as f:
+                                        upload_size = put_into_s3('cvg-files', [cvg_tool, project, version, suite], tc, f)
+                                        print "Uploaded {bytes} bytes to s3".format(bytes=upload_size)
+                                except:
+                                    print "Could not upload to s3"
+                        except CoverageCalculationException as ex:
+                            fail += 1
+                            print "-- {suite}:{test} failed with {tool}".format(suite=suite, test=tc, tool=cvg_tool)
+                            print traceback.format_exc()
+                            if fail_key is not None:
+                                put_into_set(r, fail_key, [cvg_tool, project, version, suite], tc)
 
+                        progress_callback()
+    return "Success ({empty}/{nonempty}/{fail} ENF)".format(empty=empty, nonempty=nonempty, fail=fail)
