@@ -110,7 +110,8 @@ def test_lists_gen(input, hostname, pid):
                     gen_tool, _, suite_id = suite.partition('.')
                     fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
                     if fetch_result not in ['ok', 'missing', 'empty']:
-                        raise Exception('Unexpected return value from d4 fetch-generated-tests')
+                        raise Exception('Unexpected return value from d4 fetch-generated-tests: {response}'.format(
+                            response=fetch_result))
                     put_key(r, 'fetch-result', [project, version, suite], fetch_result)
                     if fetch_result == 'ok':
                         d4()('compile', '-g')
@@ -304,7 +305,8 @@ def compile_cache(input, hostname, pid, key_to_check='compile-cache'):
                         gen_tool, _, suite_id = suite.partition('.')
                         fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
                         if fetch_result != "ok":
-                            raise Exception('Unexpected return value from d4 fetch-generated-tests')
+                            raise Exception('Unexpected return value from d4 fetch-generated-tests: {response}'.format(
+                                response=fetch_result))
                         d4()('compile', '-g')
 
                     # here is making the tar
