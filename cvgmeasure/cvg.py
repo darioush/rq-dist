@@ -2,10 +2,12 @@ import os
 import json
 import socket
 import traceback
+import tarfile
 
 from plumbum import local
 from plumbum.cmd import rm, mkdir, ls
 from redis import StrictRedis
+from cStringIO import StringIO
 
 from cvgmeasure.common import job_decorator
 from cvgmeasure.common import check_key, filter_key_list, mk_key
@@ -260,6 +262,63 @@ def generated_cvg(input, hostname, pid):
         fail_key='fail',
         generated=True,
     )
+
+@job_decorator
+def compile_cache(input, hostname, pid, key_to_check='compile-cache'):
+    project   = input['project']
+    version   = input['version']
+    cvg_tool  = input['cvg_tool']
+    suite     = input['suite']
+    redo      = input.get('redo', False)
+    generated = not (suite == 'dev')
+
+    work_dir, d4j_path, redis_url = map(
+            lambda property: get_property(property, hostname, pid),
+            ['work_dir', 'd4j_path', 'redis_url']
+    )
+
+    work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
+    print work_dir_path
+
+    r = StrictRedis.from_url(redis_url)
+
+    with check_key(
+            r,
+            key_to_check,
+            [cvg_tool, project, version, suite],
+            redo=redo,
+            other_keys=[],
+    ):
+        with refresh_dir(work_dir_path, cleanup=True):
+            with add_to_path(d4j_path):
+                with checkout(project, version, work_dir_path / 'checkout'):
+                    compile_if_needed(cvg_tool)
+                    print "reset"
+                    results = get_coverage(cvg_tool, 'reset')
+                    print results
+                    assert is_empty(cvg_tool, results) # make sure result of reset is successful
+                    assert not denominator_empty(cvg_tool, results)
+
+                    if generated:
+                        print "gen compile"
+                        gen_tool, _, suite_id = suite.partition('.')
+                        fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
+                        if fetch_result != "ok":
+                            raise Exception('Unexpected return value from d4 fetch-generated-tests')
+                        d4()('compile', '-g')
+
+                    # here is making the tar
+                    sio = StringIO()
+                    with tarfile.open(fileobj=sio, mode='w:gz') as tar:
+                        tar.add(name='.', exclude=lambda fn: fn.startswith('./.git'))
+                    sio.seek(0)
+                    upload_bytes = put_into_s3('compile-cache', [cvg_tool, project, version], suite, sio)
+                    sio.close()
+                    print "Uploaded {upload_bytes} to s3".format(upload_bytes=upload_bytes)
+
+    return "Success"
+
+
 
 
 def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_key, non_empty_key,
