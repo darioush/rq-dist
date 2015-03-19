@@ -4,6 +4,7 @@ import socket
 import traceback
 import tarfile
 
+from contextlib import contextmanager
 from plumbum import local
 from plumbum.cmd import rm, mkdir, ls
 from redis import StrictRedis
@@ -17,8 +18,7 @@ from cvgmeasure.conf import get_property
 from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage
 from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_file, add_to_path, compile_if_needed
 from cvgmeasure.d4 import is_empty, denominator_empty, CoverageCalculationException
-from cvgmeasure.s3 import put_into_s3
-
+from cvgmeasure.s3 import put_into_s3, get_compiled_from_s3, NoFileOnS3
 
 def test_list_special_case(tc):
     cl, _, method = tc.partition('::')
@@ -261,7 +261,6 @@ def generated_cvg(input, hostname, pid):
         non_empty_key='nonempty',
         pass_count_key='passcnt',
         fail_key='fail',
-        generated=True,
     )
 
 @job_decorator
@@ -271,7 +270,6 @@ def compile_cache(input, hostname, pid, key_to_check='compile-cache'):
     cvg_tool  = input['cvg_tool']
     suite     = input['suite']
     redo      = input.get('redo', False)
-    generated = not (suite == 'dev')
 
     work_dir, d4j_path, redis_url = map(
             lambda property: get_property(property, hostname, pid),
@@ -293,22 +291,7 @@ def compile_cache(input, hostname, pid, key_to_check='compile-cache'):
         with refresh_dir(work_dir_path, cleanup=True):
             with add_to_path(d4j_path):
                 with checkout(project, version, work_dir_path / 'checkout'):
-                    compile_if_needed(cvg_tool)
-                    print "reset"
-                    results = get_coverage(cvg_tool, 'reset')
-                    print results
-                    assert is_empty(cvg_tool, results) # make sure result of reset is successful
-                    assert not denominator_empty(cvg_tool, results)
-
-                    if generated:
-                        print "gen compile"
-                        gen_tool, _, suite_id = suite.partition('.')
-                        fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
-                        if fetch_result != "ok":
-                            raise Exception('Unexpected return value from d4 fetch-generated-tests: {response}'.format(
-                                response=fetch_result))
-                        d4()('compile', '-g')
-
+                    coverage_setup_and_reset(cvg_tool, suite)
                     # here is making the tar
                     sio = StringIO()
                     with tarfile.open(fileobj=sio, mode='w:gz') as tar:
@@ -321,16 +304,47 @@ def compile_cache(input, hostname, pid, key_to_check='compile-cache'):
     return "Success"
 
 
+def coverage_setup_and_reset(cvg_tool, suite):
+    generated = not (suite == 'dev')
+    compile_if_needed(cvg_tool)
+    print "reset"
+    results = get_coverage(cvg_tool, 'reset')
+    print results
+    assert is_empty(cvg_tool, results) # make sure result of reset is successful
+    assert not denominator_empty(cvg_tool, results)
+
+    if generated:
+        print "gen compile"
+        gen_tool, _, suite_id = suite.partition('.')
+        fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
+        if fetch_result != "ok":
+            raise Exception('Unexpected return value from d4 fetch-generated-tests: {response}'.format(
+                response=fetch_result))
+        d4()('compile', '-g')
+
+
+@contextmanager
+def cache_or_checkout_and_coverage_setup_and_reset(project, version, bucket, bundle, t, dest_dir):
+    try:
+        with get_compiled_from_s3(bucket, bundle, t, dest_dir):
+            print "Cache fetch successful"
+            yield
+    except NoFileOnS3:
+        print "File not on S3", NoFileOnS3
+        with checkout(project, version, dest_dir):
+            coverage_setup_and_reset(cvg_tool, suite)
+            yield
 
 
 def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_key, non_empty_key,
-        generated=False, pass_count_key=None, fail_key=None):
+        pass_count_key=None, fail_key=None):
     project  = input['project']
     version  = input['version']
     cvg_tool = input['cvg_tool']
     suite    = input['suite']
     redo     = input.get('redo', False)
     test_classes = input[input_key]
+    generated = not (suite == 'dev')
 
     work_dir, d4j_path, redis_url = map(
             lambda property: get_property(property, hostname, pid),
@@ -353,22 +367,13 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_ke
     ) as worklist:
         with refresh_dir(work_dir_path, cleanup=True):
             with add_to_path(d4j_path):
-                with checkout(project, version, work_dir_path / 'checkout'):
-                    compile_if_needed(cvg_tool)
-                    print "reset"
-                    results = get_coverage(cvg_tool, 'reset')
-                    print results
-                    assert is_empty(cvg_tool, results) # make sure result of reset is successful
-                    assert not denominator_empty(cvg_tool, results)
-
-                    if generated:
-                        print "gen compile"
-                        gen_tool, _, suite_id = suite.partition('.')
-                        fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
-                        if fetch_result != "ok":
-                            raise Exception('Unexpected return value from d4 fetch-generated-tests')
-                        d4()('compile', '-g')
-
+                with cache_or_checkout_and_coverage_setup_and_reset(
+                        project,
+                        version,
+                        'compile-cache',
+                        [cvg_tool, project, version], suite,
+                        work_dir_path / 'checkout'
+                ):
                     for tc, progress_callback in worklist:
                         print tc
                         try:
