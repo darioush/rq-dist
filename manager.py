@@ -10,19 +10,20 @@ from cvgmeasure.conf import workers, REDIS_URL_RQ, get_property
 from rq import Worker
 from redis import StrictRedis
 
+SSH_OPTS=('-o', 'StrictHostKeyChecking=no')
 
 def is_local(m, worker):
     machine, _, _ = worker.partition('.')
     return machine == m
 
 def teardown(machine):
-    rem = SshMachine(workers(machine)['hostname'])
+    rem = SshMachine(workers(machine)['hostname'], ssh_opts=SSH_OPTS)
     dir = rem.path(workers(machine)['rqdir'])
     print "REMOVING DIR.."
     rem["rm"]("-rf", dir)
 
 def setup(machine):
-    rem = SshMachine(workers(machine)['hostname'])
+    rem = SshMachine(workers(machine)['hostname'], ssh_opts=SSH_OPTS)
     dir = rem.path(workers(machine)['rqdir'])
     if not dir.exists():
         print "CLONING REPO..."
@@ -94,7 +95,7 @@ def main(machine, instances, queues=['high', 'default', 'low']):
             machine_workers))
 
     machine_info = workers(machine)
-    rem = SshMachine(machine_info['hostname'], **machine_info.get('kwargs', {}))
+    rem = SshMachine(machine_info['hostname'], ssh_opts=SSH_OPTS, **machine_info.get('kwargs', {}))
     dir = rem.path(machine_info['rqdir'])
 
     with rem.cwd(dir):
@@ -118,7 +119,7 @@ def killall(machine):
 def kill(worker):
     machine, _, pid = worker.partition('.')
     machine_info = workers(machine)
-    rem = SshMachine(machine_info['hostname'], **machine_info.get('kwargs', {}))
+    rem = SshMachine(machine_info['hostname'], ssh_opts=SSH_OPTS, **machine_info.get('kwargs', {}))
     try:
         rem['kill'](pid)
         print "Killed %s" % worker

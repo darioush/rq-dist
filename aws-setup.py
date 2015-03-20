@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/bin/env python
 import json
 import sys
 import paramiko
@@ -23,6 +23,7 @@ def main(fn, key_file):
         client = ParallelSSHClient(hosts, user="ec2-user")
 
     client.copy_file('setup.sh', 'setup.sh')
+    client.copy_file('../.boto', '.boto')
     client.pool.join()
     print "copied"
 
