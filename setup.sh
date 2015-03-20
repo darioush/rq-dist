@@ -50,6 +50,7 @@ mvnpath=`which mvn 2>/dev/null || true`;
 if [ -z "$mvnpath" ]; then
     wget http://homes.cs.washington.edu/~darioush/apache-maven-3.0.5-bin.tar.gz
     sudo tar xf apache-maven-3.0.5-bin.tar.gz -C /usr/local/ --strip 1
+    sudo ln -s /usr/local/bin/mvn /usr/bin/mvn
     mvn --version
     progress "+mvn";
 else
