@@ -26,6 +26,17 @@ def add_to_path(l):
     for _ in l:
         local.env.path.pop()
 
+@context_manager
+def add_timeout(timeout):
+    TIMEOUT_KEY = 'D4J_TEST_TIMEOUT'
+    prev_val = local.env.get(TIMEOUT_KEY, None)
+    local.env[TIMEOUT_KEY] = timeout
+    yield
+    if prev_val is None:
+        del local.env[TIMEOUT_KEY]
+    else:
+        local.env[TIMEOUT_KEY] = prev_val
+
 def d4():
     return local['defects4j']
 

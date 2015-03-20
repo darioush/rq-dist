@@ -17,7 +17,7 @@ from cvgmeasure.common import put_list, put_into_hash, put_key
 from cvgmeasure.common import get_key, inc_key, put_into_set
 from cvgmeasure.conf import get_property
 from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage
-from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_file, add_to_path, compile_if_needed
+from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_file, add_to_path, compile_if_needed, add_timeout
 from cvgmeasure.d4 import is_empty, denominator_empty, CoverageCalculationException
 from cvgmeasure.s3 import put_into_s3, get_compiled_from_s3, NoFileOnS3
 
@@ -387,7 +387,7 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_ke
                             else:
                                 remaining_time = max(int((die_time - datetime.now()).total_seconds() * 1000), 0) + 1000
                                 print "Timeout to be set @ {remaining_time}".format(remaining_time=remaining_time)
-                                with local.env(D4J_TEST_TIMEOUT=remaining_time):
+                                with add_timeout(remaining_time):
                                     results = get_coverage(cvg_tool, tc, generated=generated)
                             if pass_count_key is not None:
                                 inc_key(r, pass_count_key, [project, version, suite], tc)
