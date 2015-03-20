@@ -67,6 +67,7 @@ def get_coverage(cvg_tool, tc, generated=False):
                 r'\s*Mutants covered: (\d+)': 'mc',
                 r'\s*Mutants killed: (\d+)': 'mk',
         }
+        fail_file = 'failing-tests.txt'
     else:
         cvg = d4()['coverage', '-T', cvg_tool]
         if generated:
@@ -78,6 +79,7 @@ def get_coverage(cvg_tool, tc, generated=False):
                 r'Branches total: (\d+)': 'bt',
                 r'Branches covered: (\d+)': 'bc',
         }
+        fail_file = 'coverage/coverage_fails'
 
     result = {}
     def update_dict(line, result):
@@ -88,7 +90,14 @@ def get_coverage(cvg_tool, tc, generated=False):
     for line in output.split('\n'):
         update_dict(line, result)
     if not all(val in result for val in regexps.values()):
-        raise CoverageCalculationException("Could not calculate coverage for: %s, %s" % (cvg_tool, tc))
+        try:
+            with open(fail_file) as f:
+                traceback = f.read()
+        except:
+            traceback = ''
+        raise CoverageCalculationException("{traceback}\nCould not calculate coverage for: {cvg_tool}, {tc}".format(
+                traceback=traceback, cvg_tool=cvg_tool, tc=tc)
+            )
 
     if denominator_empty(cvg_tool, result):
         raise CoverageCalculationException("Lines Total reported as 0 for: %s, %s" % (cvg_tool, tc))

@@ -3,11 +3,13 @@ import json
 import sys
 
 from contextlib import contextmanager
-from rq import get_current_job, Worker
+from rq import get_current_job, Worker, Connection
 from cStringIO import StringIO
 from rq.job import NoSuchJobError
+from redis import StrictRedis
 
 from cvgmeasure.conf import REDIS_PREFIX, DATA_PREFIX, TMP_PREFIX
+from cvgmeasure.conf import REDIS_URL_RQ
 
 def get_fun(fun_dotted):
     module_name = '.'.join(fun_dotted.split('.')[:-1])
@@ -36,34 +38,34 @@ class Tee(object):
     def isatty(self):
         return True
 
-@contextmanager
-def redirect_stdio():
-    job = get_current_job()
-    if job is None:
-        yield
-    else:
-        oldout, olderr = sys.stdout, sys.stderr
-        newout, newerr = StringIO(), StringIO()
-        #sys.stdout = Tee(sys.stdout, newout)
-        #sys.stderr = Tee(sys.stderr, newerr)
-        try:
-            yield
-            job.meta['stdout'] = newout.getvalue()
-            job.meta['stderr'] = newerr.getvalue()
-            job.save()
-        finally:
-            sys.stdout, sys.stderr = oldout, olderr
-            newout.close()
-            newerr.close()
+#@contextmanager
+#def redirect_stdio(job):
+#    if job is None:
+#        yield
+#    else:
+#        oldout, olderr = sys.stdout, sys.stderr
+#        newout, newerr = StringIO(), StringIO()
+#        #sys.stdout = Tee(sys.stdout, newout)
+#        #sys.stderr = Tee(sys.stderr, newerr)
+#        try:
+#            yield
+#            job.meta['stdout'] = newout.getvalue()
+#            job.meta['stderr'] = newerr.getvalue()
+#            job.save()
+#        finally:
+#            sys.stdout, sys.stderr = oldout, olderr
+#            newout.close()
+#            newerr.close()
 
 def job_decorator(f):
     def decorated(input, f=f, *args, **kwargs):
-        with redirect_stdio():
+        with Connection(connection=StrictRedis.from_url(REDIS_URL_RQ)):
             job = get_current_job()
             if job is None:
                 f_in = input
                 hostname = None
                 pid = None
+                timeout = None
             else:
                 f_in = json.loads(input)
                 for worker in Worker.all():
@@ -72,11 +74,13 @@ def job_decorator(f):
                         if curr_job and (curr_job.id == job.id):
                             hostname, _, _pid = worker.name.partition('.')
                             pid = int(_pid)
+                            timeout = curr_job.timeout
                             break
                     except NoSuchJobError:
                         continue
                 else:
                     raise Exception("Could not find worker for job: %s" % job.id)
+            f_in.update({} if timeout is None else {'timeout': timeout})
             return f(f_in, hostname, pid, *args, **kwargs)
     return decorated
 

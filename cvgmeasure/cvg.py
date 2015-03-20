@@ -9,6 +9,7 @@ from plumbum import local
 from plumbum.cmd import rm, mkdir, ls
 from redis import StrictRedis
 from cStringIO import StringIO
+from datetime import datetime, timedelta
 
 from cvgmeasure.common import job_decorator
 from cvgmeasure.common import check_key, filter_key_list, mk_key
@@ -343,8 +344,12 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_ke
     cvg_tool = input['cvg_tool']
     suite    = input['suite']
     redo     = input.get('redo', False)
+    timeout  = input.get('timeout', None)
     test_classes = input[input_key]
     generated = not (suite == 'dev')
+
+    if timeout:
+        die_time = datetime.now() + timedelta(seconds=timeout)
 
     work_dir, d4j_path, redis_url = map(
             lambda property: get_property(property, hostname, pid),
@@ -377,7 +382,13 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_ke
                     for tc, progress_callback in worklist:
                         print tc
                         try:
-                            results = get_coverage(cvg_tool, tc, generated=generated)
+                            if timeout is None:
+                                results = get_coverage(cvg_tool, tc, generated=generated)
+                            else:
+                                remaining_time = max(int((die_time - datetime.now()).total_seconds() * 1000), 0) + 1000
+                                print "Timeout to be set @ {remaining_time}".format(remaining_time=remaining_time)
+                                with local.env(D4J_TEST_TIMEOUT=remaining_time):
+                                    results = get_coverage(cvg_tool, tc, generated=generated)
                             if pass_count_key is not None:
                                 inc_key(r, pass_count_key, [project, version, suite], tc)
                             print results
@@ -405,3 +416,4 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_ke
 
                         progress_callback()
     return "Success ({empty}/{nonempty}/{fail} ENF)".format(empty=empty, nonempty=nonempty, fail=fail)
+
