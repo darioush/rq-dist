@@ -5,7 +5,7 @@ import sys
 import re
 
 from rq import get_failed_queue
-from rq.job import NoSuchJobError, Job, Status
+from rq.job import NoSuchJobError, Job, JobStatus
 from rq.exceptions import InvalidJobOperationError
 from rq import Queue
 from optparse import OptionParser
@@ -67,7 +67,7 @@ def _requeue(r, fq, job_id, to_q, timeout=None, change_method=None, update_dict=
                 ipdb.set_trace()
                 raise InvalidJobOperationError('Cannot requeue non-failed jobs.')
 
-            job.set_status(Status.QUEUED)
+            job.set_status(JobStatus.QUEUED)
             job.exc_info = None
 
 

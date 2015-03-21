@@ -1,0 +1,1 @@
+/main.py qb-slice cvgmeasure.cvg.generated_cvg -p Chart -v 1 -Z test-methods-exec -K cvg_tool -a cobertura -S test-methods -q default -t 1800 -b 50 -k tests -T randoop.3 -T randoop.4 -T randoop.5 -T randoop.6 -T randoop.8 -T randoop.9 -T randoop.10 -s suite 

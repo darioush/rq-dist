@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 import sys
 import signal
 import os
