@@ -250,19 +250,6 @@ def test_cvg_methods(input, hostname, pid):
     )
 
 
-@job_decorator
-def generated_cvg(input, hostname, pid):
-    return handle_test_cvg_bundle(
-        input,
-        hostname,
-        pid,
-        input_key='tests',
-        check_key='test-methods-exec',
-        result_key='cvg',
-        non_empty_key='nonempty',
-        pass_count_key='passcnt',
-        fail_key='fail',
-    )
 
 @job_decorator
 def compile_cache(input, hostname, pid, key_to_check='compile-cache'):
@@ -304,6 +291,7 @@ def compile_cache(input, hostname, pid, key_to_check='compile-cache'):
 
     return "Success"
 
+###### Refactored jobs #######
 
 def coverage_setup_and_reset(cvg_tool, suite):
     generated = not (suite == 'dev')
@@ -336,30 +324,33 @@ def cache_or_checkout_and_coverage_setup_and_reset(project, version, bucket, bun
             coverage_setup_and_reset(cvg_tool, suite)
             yield
 
+@job_decorator
+def generated_cvg(r, work_dir, input):
+    return handle_test_cvg_bundle(
+        r,
+        work_dir,
+        input,
+        input_key='tests',
+        check_key='test-methods-exec',
+        result_key='cvg',
+        non_empty_key='nonempty',
+        pass_count_key='passcnt',
+        fail_key='fail',
+    )
 
-def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_key, non_empty_key,
+def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, result_key, non_empty_key,
         pass_count_key=None, fail_key=None):
     project  = input['project']
     version  = input['version']
     cvg_tool = input['cvg_tool']
     suite    = input['suite']
     redo     = input.get('redo', False)
-    timeout  = input.get('timeout', None)
+    timeout  = input.get('timeout', 1800)
     test_classes = input[input_key]
     generated = not (suite == 'dev')
 
     if timeout:
         die_time = datetime.now() + timedelta(seconds=timeout)
-
-    work_dir, d4j_path, redis_url = map(
-            lambda property: get_property(property, hostname, pid),
-            ['work_dir', 'd4j_path', 'redis_url']
-    )
-
-    work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
-    print work_dir_path
-
-    r = StrictRedis.from_url(redis_url)
 
     empty, nonempty, fail = 0, 0, 0
     with filter_key_list(
@@ -370,50 +361,48 @@ def handle_test_cvg_bundle(input, hostname, pid, input_key, check_key, result_ke
             redo=redo,
             other_keys=[result_key, non_empty_key],
     ) as worklist:
-        with refresh_dir(work_dir_path, cleanup=True):
-            with add_to_path(d4j_path):
-                with cache_or_checkout_and_coverage_setup_and_reset(
-                        project,
-                        version,
-                        'compile-cache',
-                        [cvg_tool, project, version], suite,
-                        work_dir_path / 'checkout'
-                ):
-                    for tc, progress_callback in worklist:
-                        print tc
+        with cache_or_checkout_and_coverage_setup_and_reset(
+                project,
+                version,
+                'compile-cache',
+                [cvg_tool, project, version], suite,
+                work_dir / 'checkout'
+        ):
+            for tc, progress_callback in worklist:
+                print tc
+                try:
+                    if timeout is None:
+                        results = get_coverage(cvg_tool, tc, generated=generated)
+                    else:
+                        remaining_time = max(int((die_time - datetime.now()).total_seconds() * 1000), 0) + 1000
+                        print "Timeout to be set @ {remaining_time}".format(remaining_time=remaining_time)
+                        with add_timeout(remaining_time):
+                            results = get_coverage(cvg_tool, tc, generated=generated)
+                    if pass_count_key is not None:
+                        inc_key(r, pass_count_key, [project, version, suite], tc)
+                    print results
+                    put_into_hash(r, result_key, [cvg_tool, project, version, suite], tc, json.dumps(results))
+
+                    if is_empty(cvg_tool, results):
+                        empty += 1
+                        put_into_hash(r, non_empty_key, [cvg_tool, project, version, suite], tc, None)
+                    else:
+                        nonempty += 1
+                        put_into_hash(r, non_empty_key, [cvg_tool, project, version, suite], tc, 1)
+                        file_list = get_coverage_files_to_save(cvg_tool)
                         try:
-                            if timeout is None:
-                                results = get_coverage(cvg_tool, tc, generated=generated)
-                            else:
-                                remaining_time = max(int((die_time - datetime.now()).total_seconds() * 1000), 0) + 1000
-                                print "Timeout to be set @ {remaining_time}".format(remaining_time=remaining_time)
-                                with add_timeout(remaining_time):
-                                    results = get_coverage(cvg_tool, tc, generated=generated)
-                            if pass_count_key is not None:
-                                inc_key(r, pass_count_key, [project, version, suite], tc)
-                            print results
-                            put_into_hash(r, result_key, [cvg_tool, project, version, suite], tc, json.dumps(results))
+                            with get_tar_gz_file(file_list) as f:
+                                upload_size = put_into_s3('cvg-files', [cvg_tool, project, version, suite], tc, f)
+                                print "Uploaded {bytes} bytes to s3".format(bytes=upload_size)
+                        except:
+                            print "Could not upload to s3"
+                except CoverageCalculationException as ex:
+                    fail += 1
+                    print "-- {suite}:{test} failed with {tool}".format(suite=suite, test=tc, tool=cvg_tool)
+                    print traceback.format_exc()
+                    if fail_key is not None:
+                        put_into_set(r, fail_key, [cvg_tool, project, version, suite], tc)
 
-                            if is_empty(cvg_tool, results):
-                                empty += 1
-                                put_into_hash(r, non_empty_key, [cvg_tool, project, version, suite], tc, None)
-                            else:
-                                nonempty += 1
-                                put_into_hash(r, non_empty_key, [cvg_tool, project, version, suite], tc, 1)
-                                file_list = get_coverage_files_to_save(cvg_tool)
-                                try:
-                                    with get_tar_gz_file(file_list) as f:
-                                        upload_size = put_into_s3('cvg-files', [cvg_tool, project, version, suite], tc, f)
-                                        print "Uploaded {bytes} bytes to s3".format(bytes=upload_size)
-                                except:
-                                    print "Could not upload to s3"
-                        except CoverageCalculationException as ex:
-                            fail += 1
-                            print "-- {suite}:{test} failed with {tool}".format(suite=suite, test=tc, tool=cvg_tool)
-                            print traceback.format_exc()
-                            if fail_key is not None:
-                                put_into_set(r, fail_key, [cvg_tool, project, version, suite], tc)
-
-                        progress_callback()
+                progress_callback()
     return "Success ({empty}/{nonempty}/{fail} ENF)".format(empty=empty, nonempty=nonempty, fail=fail)
 

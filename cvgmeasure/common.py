@@ -1,20 +1,19 @@
 import importlib
 import json
-import sys
+import redis
 
 from contextlib import contextmanager
-from rq import get_current_job, Worker, Connection
-from cStringIO import StringIO
-from rq.job import NoSuchJobError
-from redis import StrictRedis
+from rq.job import _job_stack
+from plumbum import local
 
-from cvgmeasure.conf import REDIS_PREFIX, DATA_PREFIX, TMP_PREFIX
-from cvgmeasure.conf import REDIS_URL_RQ
+from cvgmeasure.conf import REDIS_PREFIX, DATA_PREFIX, TMP_PREFIX, get_property_defaults
+from cvgmeasure.d4 import refresh_dir, add_to_path
 
 def get_fun(fun_dotted):
     module_name = '.'.join(fun_dotted.split('.')[:-1])
     fun_name    = fun_dotted.split('.')[-1]
     return getattr(importlib.import_module(module_name), fun_name)
+
 
 def doQ(q, fun_dotted, json_str, timeout, print_only):
     if print_only:
@@ -25,91 +24,66 @@ def doQ(q, fun_dotted, json_str, timeout, print_only):
                 args=(json_str,),
                 timeout=timeout
         )
-#####
 
-class Tee(object):
-    def __init__(self, a, b):
-        self.a, self.b = a, b
-
-    def write(self, data):
-        self.a.write(data)
-        self.b.write(data)
-
-    def isatty(self):
-        return True
-
-#@contextmanager
-#def redirect_stdio(job):
-#    if job is None:
-#        yield
-#    else:
-#        oldout, olderr = sys.stdout, sys.stderr
-#        newout, newerr = StringIO(), StringIO()
-#        #sys.stdout = Tee(sys.stdout, newout)
-#        #sys.stderr = Tee(sys.stderr, newerr)
-#        try:
-#            yield
-#            job.meta['stdout'] = newout.getvalue()
-#            job.meta['stderr'] = newerr.getvalue()
-#            job.save()
-#        finally:
-#            sys.stdout, sys.stderr = oldout, olderr
-#            newout.close()
-#            newerr.close()
 
 def job_decorator(f):
     def decorated(input, f=f, *args, **kwargs):
-        with Connection(connection=StrictRedis.from_url(REDIS_URL_RQ)):
-            job = get_current_job()
-            if job is None:
-                f_in = input
-                hostname = None
-                pid = None
-                timeout = None
-            else:
-                f_in = json.loads(input)
-                for worker in Worker.all():
-                    try:
-                        curr_job = worker.get_current_job()
-                        if curr_job and (curr_job.id == job.id):
-                            hostname, _, _pid = worker.name.partition('.')
-                            pid = int(_pid)
-                            timeout = curr_job.timeout
-                            break
-                    except NoSuchJobError:
-                        continue
-                else:
-                    raise Exception("Could not find worker for job: %s" % job.id)
-            f_in.update({} if timeout is None else {'timeout': timeout})
-            return f(f_in, hostname, pid, *args, **kwargs)
+        f_in = json.loads(input)
+        work_dir, d4j_path, redis_url = map(
+                lambda property: get_property_defaults(property),
+                ['work_dir', 'd4j_path', 'redis_url']
+        )
+
+        work_dir_path = local.path(work_dir)
+        print "Working directory {0}".format(work_dir_path)
+
+        with refresh_dir(work_dir_path, cleanup=True):
+            with add_to_path(d4j_path):
+                with connect_to_redis(redis_url) as r:
+                    return f(r, work_dir_path, f_in, *args, **kwargs)
+
     return decorated
+
+
+@contextmanager
+def connect_to_redis(url):
+    pool = redis.ConnectionPool.from_url(url)
+    yield redis.StrictRedis(connection_pool=pool)
+    pool.disconnect()
 
 
 def mk_key(key, bundle, prefix=REDIS_PREFIX):
     return ':'.join([prefix, key] + map(unicode, bundle))
 
+
 def mk_data_key(key, bundle, prefix=DATA_PREFIX):
     return mk_key(key, bundle, prefix=prefix)
+
 
 def mk_tmp_key(key, bundle, prefix=TMP_PREFIX):
     return mk_key(key, bundle, prefix=TMP_PREFIX)
 
+
 def put_into_set(r, key, bundle, member):
     _key = mk_key(key, bundle)
     return r.sadd(_key, member)
+
 
 def put_list(r, key, bundle, list):
     _key = mk_key(key, bundle)
     r.delete(_key)
     return r.rpush(_key, *list)
 
+
 def put_key(r, key, bundle, value):
     _key = mk_key(key, bundle)
     return r.set(_key, value)
 
+
 def inc_key(r, key, bundle, field, increment=1):
     _key = mk_key(key, bundle)
     return r.hincrby(_key, field, increment)
+
 
 def put_into_hash(r, key, bundle, hashkey, data):
     _key = mk_key(key, bundle)
@@ -126,6 +100,12 @@ def get_key(r, key, bundle, field, default=None):
     else:
         return result
 
+
+# TODO: A bit shady
+def get_current_job_id():
+    return _job_stack.top
+
+
 @contextmanager
 def check_key(r, key, bundle, redo=False, other_keys=[]):
     _key = mk_key(key, ['bundles'])
@@ -140,15 +120,14 @@ def check_key(r, key, bundle, redo=False, other_keys=[]):
         else:
             raise DuplicateBundleAttempt("Results already computed for %s %s" % (_key, _bundle))
     yield
-    job = get_current_job()
-    if job:
-        done_by = job.id
-    else:
-        done_by = 1
+    job = get_current_job_id()
+    done_by = 1 if job is None else job
     r.hset(_key, _bundle, done_by)
+
 
 class DuplicateBundleAttempt(Exception):
     pass
+
 
 @contextmanager
 def filter_key_list(r, key, bundle, list, redo=False, other_keys=[]):
@@ -173,11 +152,8 @@ def filter_key_list(r, key, bundle, list, redo=False, other_keys=[]):
     else:
         worklist = filtered_list
 
-    job = get_current_job()
-    if job:
-        done_by = job.id
-    else:
-        done_by = 1
+    job = get_current_job_id()
+    done_by = 1 if job is None else job
 
     yield zip(worklist, [lambda my_item=item: r.hset(_key, my_item, done_by) for item in worklist])
 

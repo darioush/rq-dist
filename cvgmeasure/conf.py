@@ -1,4 +1,6 @@
 import json
+import socket
+import os
 
 REDIS_PREFIX = 'results'
 DATA_PREFIX = 'data'
@@ -147,4 +149,9 @@ def get_property(property, hostname=None, pid=None):
                 return fn(hostname, pid)
             else:
                 return default
+
+def get_property_defaults(property):
+    hostname, _, _ = socket.gethostname().partition('.')
+    pid = os.getpid()
+    return get_property(property, hostname, pid)
 
