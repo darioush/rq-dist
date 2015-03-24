@@ -73,7 +73,7 @@ if [ -e "$dir/env" ]; then
     echo; # skip
 else
     Pushd $dir
-        virtualenv env
+        /usr/local/bin/virtualenv env
     Popd
 fi
 Pushd $dir
