@@ -251,23 +251,16 @@ def test_cvg_methods(input, hostname, pid):
 
 
 
+
+###### Refactored jobs #######
+
 @job_decorator
-def compile_cache(input, hostname, pid, key_to_check='compile-cache'):
+def compile_cache(r, work_dir, input, key_to_check='compile-cache'):
     project   = input['project']
     version   = input['version']
     cvg_tool  = input['cvg_tool']
     suite     = input['suite']
     redo      = input.get('redo', False)
-
-    work_dir, d4j_path, redis_url = map(
-            lambda property: get_property(property, hostname, pid),
-            ['work_dir', 'd4j_path', 'redis_url']
-    )
-
-    work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
-    print work_dir_path
-
-    r = StrictRedis.from_url(redis_url)
 
     with check_key(
             r,
@@ -276,22 +269,17 @@ def compile_cache(input, hostname, pid, key_to_check='compile-cache'):
             redo=redo,
             other_keys=[],
     ):
-        with refresh_dir(work_dir_path, cleanup=True):
-            with add_to_path(d4j_path):
-                with checkout(project, version, work_dir_path / 'checkout'):
-                    coverage_setup_and_reset(cvg_tool, suite)
-                    # here is making the tar
-                    sio = StringIO()
-                    with tarfile.open(fileobj=sio, mode='w:gz') as tar:
-                        tar.add(name='.', exclude=lambda fn: fn.startswith('./.git'))
-                    sio.seek(0)
-                    upload_bytes = put_into_s3('compile-cache', [cvg_tool, project, version], suite, sio)
-                    sio.close()
-                    print "Uploaded {upload_bytes} to s3".format(upload_bytes=upload_bytes)
-
+        with checkout(project, version, work_dir / 'checkout'):
+            coverage_setup_and_reset(cvg_tool, suite)
+            # here is making the tar
+            sio = StringIO()
+            with tarfile.open(fileobj=sio, mode='w:gz') as tar:
+                tar.add(name='.', exclude=lambda fn: fn.startswith('./.git'))
+            sio.seek(0)
+            upload_bytes = put_into_s3('compile-cache', [cvg_tool, project, version], suite, sio)
+            sio.close()
+            print "Uploaded {upload_bytes} bytes to s3".format(upload_bytes=upload_bytes)
     return "Success"
-
-###### Refactored jobs #######
 
 def coverage_setup_and_reset(cvg_tool, suite):
     generated = not (suite == 'dev')
@@ -313,13 +301,16 @@ def coverage_setup_and_reset(cvg_tool, suite):
 
 
 @contextmanager
-def cache_or_checkout_and_coverage_setup_and_reset(project, version, bucket, bundle, t, dest_dir):
+def cache_or_checkout_and_coverage_setup_and_reset(project, version, bucket, bundle, t, dest_dir,
+        exception_on_cache_miss=False):
     try:
         with get_compiled_from_s3(bucket, bundle, t, dest_dir):
             print "Cache fetch successful"
             yield
     except NoFileOnS3:
         print "File not on S3", NoFileOnS3
+        if exception_on_cache_miss:
+            raise
         with checkout(project, version, dest_dir):
             coverage_setup_and_reset(cvg_tool, suite)
             yield
@@ -366,7 +357,8 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, result_key,
                 version,
                 'compile-cache',
                 [cvg_tool, project, version], suite,
-                work_dir / 'checkout'
+                work_dir / 'checkout',
+                exception_on_cache_miss=True,
         ):
             for tc, progress_callback in worklist:
                 print tc

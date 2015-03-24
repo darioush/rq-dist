@@ -41,7 +41,7 @@ def get_file_from_cache_or_s3(bucket, fn, dst):
         b = s3.lookup(bucket)
         key = b.lookup(fn)
         if key is None:
-            raise NoFileOnS3("Key missing from bucket {bucket}: {key_name}".format(bucket=bucket_name, key_name=key_name))
+            raise NoFileOnS3("Key missing from bucket {bucket}: {key_name}".format(bucket=bucket, key_name=fn))
         mkdir_p(dst)
         with open(dst, 'w') as out_f:
             out_f.write(key.read())
