@@ -20,13 +20,21 @@ def single_enqueue(fun_dotted, json_str, queue_name='default', timeout=10000, pr
     doQ(q, fun_dotted, json_str, timeout, print_only)
 
 def enqueue_bundles(fun_dotted, json_str, queue_name='default',
-        timeout=1800, print_only=False, restrict_project=None, restrict_version=None, **kwargs):
+        timeout=1800, print_only=False, restrict_project=None, restrict_version=None,
+        tail_keys=[], tail_key_descr=None, **kwargs):
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
     for project, i in iter_versions(restrict_project, restrict_version):
         input = {'project': project, 'version': i}
         additionals = json.loads(json_str)
         input.update(additionals)
-        doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
+        input.update({'timeout': timeout})
+        if tail_keys == []:
+            tail_keys_to_iterate = [[]] # run the forloop once, but don't add any tail_key
+        else:
+            tail_keys_to_iterate = [[tk] for tk in tail_keys] # each of the tk's now counts, but singly
+        for tail_key in tail_keys_to_iterate:
+            input.update({} if tail_key_descr is None else {tail_key_descr: ':'.join(tail_key)})
+            doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
 
 def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
         source_key, tail_keys=[], tail_key_descr=None,
@@ -35,6 +43,7 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
         bundle_size=10, bundle_offset=0, bundle_max=None,
         alternates=None, alternate_key=None,
         check_key=None, filter_function=None, filter_arg=None,
+        map_function=None,
         **kwargs):
     if bundle_key is None:
         raise Exception("bundle key not provided [-k]")
@@ -48,25 +57,46 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
     for tail_key in tail_keys_to_iterate:
         for project, i in iter_versions(restrict_project, restrict_version):
             key = mk_key(source_key, [project, i] + tail_key)
-            size = r.llen(key)
+            key_type = r.type(key)
+
+            if key_type == 'list':
+                size = r.llen(key)
+            elif key_type == 'hash':
+                size = r.hlen(key)
+            elif key_type == 'none':
+                size = 0
+            else:
+                raise Exception('-- Unexpected key type: {0}'.format(key_type))
+
             if bundle_max is not None:
                 size = min(size, bundle_max)
 
+            mf = (lambda _1, x, _2: x) if map_function is None else get_fun(map_function)
             already_computed = {}
             if alternate_key and check_key:
                 for alternate in alternates:
-                    _key = mk_key(check_key, [alternate, project, i] + tail_key + ['bundles'])
-                    already_computed[alternate] = set(r.hkeys(_key))
+                    _key = mk_key(check_key, [alternate, project, i] + tail_key)
+                    already_computed[alternate] = set(mf(r, r.hkeys(_key), tail_key))
 
+            if key_type == 'hash':
+                all_items = r.hkeys(key)
             for j in xrange(bundle_offset, size, bundle_size):
-                bundle = r.lrange(key, j, j+bundle_size-1)
+                if key_type == 'list':
+                    bundle = r.lrange(key, j, j+bundle_size-1)
+                elif key_type == 'hash':
+                    bundle = all_items[j:j+bundle_size]
+                elif key_type == 'none':
+                    bundle = []
 
                 if filter_function is not None:
                     ff = get_fun(filter_function)
                     bundle = ff(r, project, i, tail_key, filter_arg, bundle)
 
+
                 if len(bundle) == 0:
                     continue
+
+                bundle = mf(r, bundle, tail_key)
 
                 if alternate_key:
                     for alternate in alternates:
@@ -82,11 +112,13 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
                                 continue
                             input[bundle_key] = filtered_list
 
+                        input.update({'timeout': timeout})
                         doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
                 else:
                     input = {'project': project, 'version': i, bundle_key: bundle}
                     additionals = json.loads(json_str)
                     input.update(additionals)
+                    input.update({'timeout': timeout})
                     doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
 
 if __name__ == "__main__":
@@ -115,6 +147,9 @@ if __name__ == "__main__":
     parser.add_option("-S", "--source-key", dest="source_key", action="store", type="string")
     parser.add_option("-F", "--filter-function", dest="filter_function", action="store", type="string", default=None)
     parser.add_option("-A", "--filter-arg", dest="filter_arg", action="store", type="string", default=None)
+
+    parser.add_option("-M", "--map-function", dest="map_function", action="store", type="string", default=None)
+
 
     (options, args) = parser.parse_args(sys.argv[3:])
 

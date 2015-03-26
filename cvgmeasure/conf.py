@@ -2,13 +2,11 @@ import json
 import socket
 import os
 
-REDIS_PREFIX = 'results'
-DATA_PREFIX = 'data'
-TMP_PREFIX = 'temp'
 KEYFILE = '/homes/gws/darioush/mykeypair.pem'
 
 #REDIS_URL_RQ = 'redis://monarch.cs.washington.edu:6379/0'
 REDIS_URL_RQ = 'redis://nest.cs.washington.edu:6379/0'
+REDIS_URL_XX = 'redis://nest.cs.washington.edu:6379/1'
 REDIS_URL_TG = 'redis://monarch.cs.washington.edu:6379/2'
 
 SCHOOL  = lambda host: host in set(('monarch', 'recycle', 'bicycle', 'tricycle', 'godwit', 'buffalo', 'nest'))
@@ -76,7 +74,7 @@ config = {
 
     'redis_url': [
         (
-            DEFAULT, None, 'redis://nest.cs.washington.edu:6379/1'
+            DEFAULT, None, REDIS_URL_XX,
         )
     ],
 

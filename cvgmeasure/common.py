@@ -1,12 +1,12 @@
+import re
 import importlib
 import json
 import redis
 
 from contextlib import contextmanager
-from rq.job import _job_stack
 from plumbum import local
 
-from cvgmeasure.conf import REDIS_PREFIX, DATA_PREFIX, TMP_PREFIX, get_property_defaults
+from cvgmeasure.conf import get_property_defaults
 from cvgmeasure.d4 import refresh_dir, add_to_path
 
 def get_fun(fun_dotted):
@@ -52,16 +52,8 @@ def connect_to_redis(url):
     pool.disconnect()
 
 
-def mk_key(key, bundle, prefix=REDIS_PREFIX):
-    return ':'.join([prefix, key] + map(unicode, bundle))
-
-
-def mk_data_key(key, bundle, prefix=DATA_PREFIX):
-    return mk_key(key, bundle, prefix=prefix)
-
-
-def mk_tmp_key(key, bundle, prefix=TMP_PREFIX):
-    return mk_key(key, bundle, prefix=TMP_PREFIX)
+def mk_key(key, bundle):
+    return ':'.join([key] + map(unicode, bundle))
 
 
 def put_into_set(r, key, bundle, member):
@@ -92,6 +84,7 @@ def put_into_hash(r, key, bundle, hashkey, data):
     else:
         return r.hset(_key, hashkey, data)
 
+
 def get_key(r, key, bundle, field, default=None):
     _key = mk_key(key, bundle)
     result = r.hget(_key, field)
@@ -101,14 +94,9 @@ def get_key(r, key, bundle, field, default=None):
         return result
 
 
-# TODO: A bit shady
-def get_current_job_id():
-    return _job_stack.top
-
-
 @contextmanager
 def check_key(r, key, bundle, redo=False, other_keys=[]):
-    _key = mk_key(key, ['bundles'])
+    _key = mk_key(key, [])
     _bundle = ':'.join(map(unicode, bundle))
     if r.hexists(_key, _bundle):
         if redo:
@@ -119,41 +107,128 @@ def check_key(r, key, bundle, redo=False, other_keys=[]):
                 r.delete(mk_key(key, bundle))
         else:
             raise DuplicateBundleAttempt("Results already computed for %s %s" % (_key, _bundle))
-    yield
-    job = get_current_job_id()
-    done_by = 1 if job is None else job
-    r.hset(_key, _bundle, done_by)
+    def complete(result=1):
+        r.hset(_key, bundle, json.dumps(result))
+    yield complete
 
 
 class DuplicateBundleAttempt(Exception):
     pass
 
 
+## New schema
 @contextmanager
-def filter_key_list(r, key, bundle, list, redo=False, other_keys=[]):
-    _key = mk_key(key, bundle + ['bundles'])
+def filter_key_list(r, key, bundle, list, redo=False, other_keys=[], worklist_map=lambda x: x):
+    _key = mk_key(key, bundle)
+
+    list_pairs = zip(list, worklist_map(list))
+    assert len(list_pairs) == len(list)
 
     already_computed = set(r.hkeys(_key))
-    already_computed_list = [item for item in list if item in already_computed]
-    for item in already_computed_list:
-        print "Results already computed for %s %s" % (_key, item)
+    already_computed_list = [(item, idx) for (item, idx) in list_pairs if idx in already_computed]
+    for (item, idx) in already_computed_list:
+        print "Results already computed for {0} {1} (= {2})".format(_key, item, idx)
         if redo:
-            r.hdel(_key, item)
+            r.hdel(_key, idx)
             for key in other_keys:
-                r.hdel(mk_key(key, bundle), item)
+                r.hdel(mk_key(key, bundle), idx)
 
-    filtered_list = [item for item in list if item not in already_computed]
+    filtered_list = [(item, idx) for (item, idx) in list_pairs if idx not in already_computed]
 
     if len(filtered_list) == 0 and redo is False:
         raise DuplicateBundleAttempt("No more items left to compute for %s" % _key)
 
     if redo:
-        worklist = list
+        worklist_pairs = list_pairs
     else:
         worklist = filtered_list
 
-    job = get_current_job_id()
-    done_by = 1 if job is None else job
+    yield zip(worklist, [lambda result=1, my_item=item: r.hset(_key, my_item, json.dumps(result)) for (_, item)
+                in worklist])
 
-    yield zip(worklist, [lambda my_item=item: r.hset(_key, my_item, done_by) for item in worklist])
+
+def chunks(l, n):
+    """ Yield successive n-sized chunks from l."""
+    for i in xrange(0, len(l), n):
+        yield l[i:i+n]
+
+
+def flatten(l):
+    return reduce(lambda a, b : a+b, l, [])
+
+
+def tn_i_s(r, tns, suite, allow_create=False):
+    # Randoop names are deterministic. Save DB space by not putting them there
+    if suite.startswith('randoop'):
+        groups = [re.match(r'RandoopTest(\d+)::test(\d+)', tn) for tn in tns]
+        if any([group is None for group in groups]):
+            raise Exception("Bad randoop test name")
+        nums = [(int(group.group(1)), int(group.group(2))) for group in groups]
+        idxs = [class_num * 1000 + method_num for (class_num, method_num) in nums]
+        return idxs
+
+    if suite.startswith('evo'):
+        prefix = 'evo'
+    elif suite == 'dev':
+        prefix = 'dev'
+    else:
+        raise Exception("Bad type of suite {0}".format(suite))
+
+    if allow_create:
+        last = r.get('tn-i:max:{pre}'.format(pre=prefix))
+        last = 0 if last is None else int(last)
+
+    key = 'tn-i:{pre}'.format(pre=prefix)
+    key_rev = 'i-tn:{pre}'.format(pre=prefix)
+    results = []
+    for chunk in chunks(tns, 100):
+        idxes = r.hmget(key, *chunk)
+        assert(len(idxes) == len(chunk))
+        missings = [tn for (tn, idx) in zip(chunk, idxes) if idx is None]
+        if missings:
+            if not allow_create:
+                raise Exception("Could not find idx for tests: {0}".format(' '.join(missings)))
+
+            missings_idx = {tn: last + idx for (idx, tn) in enumerate(missings)}
+            missings_idx_rev = {(last + idx): tn for (idx, tn) in enumerate(missings)}
+            r.incrby('tn-i:max:{pre}'.format(pre=prefix), len(missings))
+            last += len(missings)
+            r.hmset(key, missings_idx)
+            r.hmset(key_rev, missings_idx_rev)
+            assert(len(missings_idx) == len(missings_idx_rev))
+            assert(r.hlen(key) == r.hlen(key_rev))
+            results.append([int(idx) for idx in r.hmget(key, *chunk)])
+        else:
+            results.append([int(idx) for idx in idxes])
+    return flatten(results)
+
+
+def i_tn_s(r, i_s, suite):
+    i_s = map(int, i_s) # make sure everything is a number
+
+    if suite.startswith('randoop'):
+        return ["RandoopTest{class_num}::test{test_num}".format(
+            class_num = num / 1000,
+            test_num =  num % 1000
+            ) for num in i_s]
+
+    if suite.startswith('evo'):
+        prefix = 'evo'
+    elif suite == 'dev':
+        prefix = 'dev'
+    else:
+        raise Exception("Bad type of suite {0}".format(suite))
+
+    key_rev = 'i-tn:{pre}'.format(pre=prefix)
+    results = []
+    for chunk in chunks(i_s, 100):
+        tns = r.hmget(key_rev, *chunk)
+        assert(len(tns) == len(chunk))
+        results.append(tns)
+    return flatten(results)
+
+# helper function for calling from main.py
+def M(r, i_s, tail_key):
+    assert(len(tail_key) == 1)
+    return i_tn_s(r, i_s, tail_key[0])
 

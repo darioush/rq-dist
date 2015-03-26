@@ -92,7 +92,7 @@ def main(machine, instances, queues=['high', 'default', 'low']):
 
     print "%d workers running on %s" % (len(machine_workers), machine)
     if len(machine_workers):
-        print '\n'.join(map(lambda m: "%s\t%s" % (m.name, m.get_state()),
+        print '\n'.join(map(lambda m: "%s\t%s\t%s" % (m.name, m.get_state(), "stopped" if m.stopped else "running"),
             machine_workers))
 
     machine_info = workers(machine)
@@ -111,10 +111,10 @@ def killall(machine):
             for worker in Worker.all(connection=r)
             if is_local(machine, worker.name)]
 
-    idle_workers = [worker for worker in machine_workers
-            if worker.get_state() == 'idle']
+    #idle_workers = [worker for worker in machine_workers
+    #        if worker.get_state() == 'idle']
 
-    for worker in idle_workers:
+    for worker in machine_workers:
         kill(worker.name)
 
 def kill(worker):
