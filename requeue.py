@@ -89,7 +89,8 @@ def list_timeouts(options):
     r = redis.StrictRedis.from_url(REDIS_URL_RQ)
     fq = get_failed_queue(connection=r)
     def get_timeout(job):
-        reason = job.exc_info.split('\n')[-2:-1]
+        exc_info = '' if job.exc_info is None else job.exc_info
+        reason = exc_info.split('\n')[-2:-1]
         for r in reason:
             match = re.match('JobTimeoutException.*?(\d+)', r)
             if match:
@@ -112,21 +113,22 @@ def list_regexp(options):
     else:
         fq = get_failed_queue(connection=r)
 
-    def exception_matches(job):
-        reason = job.exc_info.split('\n')[-2:-1]
+    def exception_matches(regexp, job):
+        exc_info = '' if job.exc_info is None else job.exc_info
+        reason = exc_info.split('\n')[-2:-1]
         for r in reason:
-            match = re.search(options.regexp, r)
+            match = re.search(regexp, r)
             if match:
                 return True
         return False
 
     jobs = fq.get_jobs()
 
-    if options.regexp:
-        jobs = [job for job in jobs if exception_matches(job)]
+    for regexp in options.regexp:
+        jobs = [job for job in jobs if exception_matches(regexp, job)]
 
-    if options.descr_regexp:
-        jobs = [job for job in jobs if re.search(options.descr_regexp, job.description)]
+    for regexp in options.descr_regexp:
+        jobs = [job for job in jobs if re.search(regexp, job.description)]
 
     for job in jobs:
         print job.id
@@ -141,8 +143,8 @@ if __name__ == "__main__":
     parser.add_option("-n", "--newest", dest="newest", action="store_true", default=False)
     parser.add_option("-x", "--commit", dest="action", action="store_true", default=False)
     parser.add_option("-l", "--list-timeouts", dest="list", action="store_true", default=False)
-    parser.add_option("-g", "--list-regexp", dest="regexp", action="store", default=None)
-    parser.add_option("-G", "--descr-regexp", dest="descr_regexp", action="store", default=None)
+    parser.add_option("-g", "--list-regexp", dest="regexp", action="store", default=[])
+    parser.add_option("-G", "--descr-regexp", dest="descr_regexp", action="append", default=[])
     parser.add_option("-m", "--method", dest="method", action="store", default=None)
     parser.add_option("-U", "--update-json", dest="update_dict", action="store", default=None)
 
@@ -151,8 +153,9 @@ if __name__ == "__main__":
 
 
     if options.job_file:
-        with open(options.job_file) as f:
-            job_list = [job.strip() for job in f]
+        f = sys.stdin if options.job_file == '-' else open(options.job_file)
+        job_list = [job.strip() for job in f]
+        f.close()
         requeue(options, job_list)
 
     if options.job:
