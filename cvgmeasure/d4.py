@@ -7,7 +7,7 @@ from plumbum.cmd import rm, mkdir, ls
 PROJECTS = ['Lang', 'Chart', 'Math', 'Closure', 'Time']
 
 @contextmanager
-def refresh_dir(dir, cleanup=True):
+def refresh_dir(dir, cleanup=True, cleanup_anyways=True):
     rm('-rf', dir)
     mkdir('-p', dir)
     with local.cwd(dir):
@@ -16,6 +16,8 @@ def refresh_dir(dir, cleanup=True):
             if cleanup:
                 rm('-rf', dir)
         except:
+            if cleanup_anyways:
+                rm('-rf', dir)
             raise
 
 @contextmanager
