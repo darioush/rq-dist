@@ -105,16 +105,17 @@ def main(machine, instances, queues=['high', 'default', 'low']):
             print "Worker spawned"
 
 
-def killall(machine):
+def killall(machine, number):
     r = StrictRedis.from_url(REDIS_URL_RQ)
     machine_workers = [worker
             for worker in Worker.all(connection=r)
             if is_local(machine, worker.name)]
 
-    #idle_workers = [worker for worker in machine_workers
-    #        if worker.get_state() == 'idle']
+    idle_workers = [worker for worker in machine_workers
+            if worker.get_state() == 'suspended']
 
-    for worker in machine_workers:
+    for worker in idle_workers[:number]:
+        print "Killing %s" % worker.name
         kill(worker.name)
 
 def kill(worker):
@@ -147,7 +148,7 @@ if __name__ == "__main__":
         teardown(sys.argv[2])
 
     if sys.argv[1] == 'killall':
-        killall(sys.argv[2])
+        killall(sys.argv[2], int(sys.argv[3]))
 
     if sys.argv[1] == 'kill':
         kill(sys.argv[2])

@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+{% block body %}
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h2 class="panel-title">Info</h2>
+        </div>
+        <div class="panel-body">
+            <dl class="dl-horizontal">
+                <dt>Current timestamp</dt><dd>{{ info.timestamp }}</dd>
+                <dt>Redis connections</dt><dd>{{ info.remote_clients }} (+ {{info.local_clients}} local)</dd>
+                <dt>Workers</dt><dd>{{ info.workers }}</dd>
+            </dl>
+        </div>
+    </div>
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h2 class="panel-title">Queues</h2>
+        </div>
+    <div class="panel-body">
+        <table class="table table-bordered table-striped">
+        <thead>
+            <tr><th>Name</th><th>Workers</th><th>Count</th><th>WIP</th><th>Expired</th></tr>
+        </thead><tbody>
+            {% for q in queues %}
+                {% if q.skip %}{% else %}
+                <tr>
+                    <td><a href="http://nest.cs.washington.edu:9181/{{ q.q.name }}">{{q.q.name}}</a></td>
+                    <td>{{ q.workers }}</td>
+                    <td>{{ q.q.count }}</td>
+                    <td>{{ q.wip_count}}</td> 
+                    <td>{{ q.expired_count }}</td>
+                </tr>
+                {% endif %}
+            {% endfor %}
+        </tbody>
+        </table>
+    </table>
+{% endblock %}

@@ -232,3 +232,20 @@ def M(r, i_s, tail_key):
     assert(len(tail_key) == 1)
     return i_tn_s(r, i_s, tail_key[0])
 
+
+def downsize(j, key='tests', down_to=3):
+    input = json.loads(j.args[0])
+    out = []
+    new_input = {k: input[k] for k in input if k != key}
+    for chunk in chunks(input[key], down_to):
+        res = {key: chunk}
+        res.update(new_input)
+        out.append((j.func_name, json.dumps(res), j.timeout))
+    return out
+
+
+def downsize5(j):
+    return downsize(j, down_to=5)
+
+def downsize10(j):
+    return downsize(j, down_to=10)

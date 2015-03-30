@@ -15,6 +15,9 @@ def main(fn, key_file):
         hosts = [item['public'] for item in json.loads(f.read())]
     print len(hosts)
 
+    if sys.argv[1:]:
+        hosts = [hosts[int(idx)] for idx in sys.argv[1:]]
+
     print hosts
     if key_file is not None:
         client_key = paramiko.RSAKey.from_private_key_file(key_file)
@@ -27,6 +30,7 @@ def main(fn, key_file):
     client.pool.join()
     print "copied"
 
+
     output = client.run_command('bash setup.sh rq defects4j darioush password00 yes')
     for host in output:
         print "Host: {0}".format(host)
@@ -38,12 +42,22 @@ def main(fn, key_file):
         assert client.get_exit_code(output[host]) == 0
 
     client.pool.join()
+
+
+    output = client.run_command('df')
+    for host in output:
+        print "Host: {0}".format(host)
+        filtered_lines = [line for line in output[host]['stdout']]
+        print ' '.join(filtered_lines)
+        stderr = [line for line in output[host]['stderr']]
+        sys.stderr.write('\n'.join(stderr))
+        assert client.get_exit_code(output[host]) == 0
+    client.pool.join()
     print "joined"
 
 
 
 
 if __name__ == "__main__":
-    key_file = sys.argv[2] if len(sys.argv) > 2 else None
-    main(sys.argv[1], key_file)
+    main('hosts.json', '/homes/gws/darioush/mykeypair.pem')
 
