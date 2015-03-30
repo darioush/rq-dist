@@ -124,7 +124,7 @@ def filter_key_list(r, key, bundle, list, redo=False, other_keys=[], worklist_ma
     list_pairs = zip(list, worklist_map(list))
     assert len(list_pairs) == len(list)
 
-    already_computed = set(r.hkeys(_key))
+    already_computed = set(map(int,r.hkeys(_key)))
     already_computed_list = [(item, idx) for (item, idx) in list_pairs if idx in already_computed]
     for (item, idx) in already_computed_list:
         print "Results already computed for {0} {1} (= {2})".format(_key, item, idx)
