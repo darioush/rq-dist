@@ -40,7 +40,7 @@ def refresh(interval, func, *args):
             break
 
 def main(r, mycw):
-    refresh(120, printinfo, r, mycw)
+    refresh(60, printinfo, r, mycw)
 
 def run_more_instances(machine, count, queues=['high', 'default', 'low']):
     rem = SshMachine(machine, ssh_opts=SSH_OPTS, keyfile=KEYFILE, user='ec2-user')

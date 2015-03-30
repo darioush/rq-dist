@@ -335,14 +335,15 @@ def generated_cvg(r, work_dir, input):
 
 def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_key,
         pass_count_key=None, fail_key=None):
-    project  = input['project']
-    version  = input['version']
-    cvg_tool = input['cvg_tool']
-    suite    = input['suite']
-    redo     = input.get('redo', False)
-    timeout  = input.get('timeout', 1800)
-    tests    = input[input_key]
-    generated = not (suite == 'dev')
+    project            = input['project']
+    version            = input['version']
+    cvg_tool           = input['cvg_tool']
+    suite              = input['suite']
+    redo               = input.get('redo', False)
+    timeout            = input.get('timeout', 1800)
+    individual_timeout = input.get('individual_timeout', None)
+    tests              = input[input_key]
+    generated          = not (suite == 'dev')
 
     if timeout:
         die_time = datetime.now() + timedelta(seconds=timeout)
@@ -373,6 +374,8 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
                         results = get_coverage(cvg_tool, tc, generated=generated)
                     else:
                         remaining_time = max(int((die_time - datetime.now()).total_seconds() * 1000), 0) + 1000
+                        if individual_timeout is not None:
+                            remaining_time = min(remaining_time, individual_timeout * 1000)
                         print "Timeout to be set @ {remaining_time}".format(remaining_time=remaining_time)
                         with add_timeout(remaining_time):
                             results = get_coverage(cvg_tool, tc, generated=generated)

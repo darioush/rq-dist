@@ -1,1 +1,1 @@
-for m in `python aws-list-all.py hosts.json `; do python manager.py spawn $m 35; done
+for m in `python aws-list-all.py hosts.json `; do python manager.py spawn $m 30; done
