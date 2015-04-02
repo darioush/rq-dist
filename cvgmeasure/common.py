@@ -200,6 +200,8 @@ def tn_i_s(r, tns, suite, allow_create=False):
                 last = 0 if last is None else int(last)
                 pipe.multi()
                 idxes = pipe.hmget(key, *chunk)
+                if len(idxes) != len(chunk):
+                    raise Exception('--'.join(idxes) + "    " + '--'.join(chunk))
                 assert(len(idxes) == len(chunk))
                 missings = [tn for (tn, idx) in zip(chunk, idxes) if idx is None]
                 missings_idx = {tn: last + idx for (idx, tn) in enumerate(missings)}
