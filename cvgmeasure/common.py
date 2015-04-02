@@ -194,29 +194,23 @@ def tn_i_s(r, tns, suite, allow_create=False):
             if not allow_create:
                 raise Exception("Could not find idx for tests: {0}".format(' '.join(missings)))
 
-            with r.pipeline() as pipe:
-                while 1:
-                    assert(r.hlen(key) == r.hlen(key_rev))
-                    try:
-                        pipe.watch(max_key)
-                        last = r.get(max_key)
-                        last = 0 if last is None else int(last)
+            def add_missings(pipe):
+                assert(pipe.hlen(key) == pipe.hlen(key_rev))
+                last = pipe.get(max_key)
+                last = 0 if last is None else int(last)
+                pipe.multi()
+                idxes = pipe.hmget(key, *chunk)
+                assert(len(idxes) == len(chunk))
+                missings = [tn for (tn, idx) in zip(chunk, idxes) if idx is None]
+                missings_idx = {tn: last + idx for (idx, tn) in enumerate(missings)}
+                missings_idx_rev = {(last + idx): tn for (idx, tn) in enumerate(missings)}
+                assert(len(missings_idx) == len(missings_idx_rev))
+                pipe.hmset(key, missings_idx)
+                pipe.hmset(key_rev, missings_idx_rev)
+                pipe.incrby(max_key, len(missings))
 
-                        pipe.multi()
-                        idxes = r.hmget(key, *chunk)
-                        assert(len(idxes) == len(chunk))
-                        missings = [tn for (tn, idx) in zip(chunk, idxes) if idx is None]
-                        missings_idx = {tn: last + idx for (idx, tn) in enumerate(missings)}
-                        missings_idx_rev = {(last + idx): tn for (idx, tn) in enumerate(missings)}
-                        assert(len(missings_idx) == len(missings_idx_rev))
-                        r.hmset(key, missings_idx)
-                        r.hmset(key_rev, missings_idx_rev)
-                        r.incrby(max_key, len(missings))
-                        pipe.execute()
-                        break
-                    except WatchError:
-                        continue
-
+            assert(r.hlen(key) == r.hlen(key_rev))
+            r.transaction(add_missings, max_key)
             assert(r.hlen(key) == r.hlen(key_rev))
             results.append([int(idx) for idx in r.hmget(key, *chunk)])
         else:
