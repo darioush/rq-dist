@@ -206,6 +206,9 @@ def tn_i_s(r, tns, suite, allow_create=False):
                 missings_idx_rev = {(last + idx): tn for (idx, tn) in enumerate(missings)}
                 assert(len(missings_idx) == len(missings_idx_rev))
 
+                if len(missings_idx) == 0: # cannot set an empty length mapping
+                    return
+
                 pipe.multi()
                 pipe.incrby(max_key, len(missings))
                 pipe.hmset(key, missings_idx)
