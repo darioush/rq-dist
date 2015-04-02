@@ -96,8 +96,9 @@ def get_key(r, key, bundle, field, default=None):
 
 @contextmanager
 def check_key(r, key, bundle, redo=False, other_keys=[]):
-    _key = mk_key(key, bundle[-1:])
-    _bundle = ':'.join(map(unicode, bundle[:-1]))
+    _key = mk_key(key, bundle[:-1])
+    _bundle = ':'.join(map(unicode, bundle[-1:]))
+    print _key, _bundle
     if r.hexists(_key, _bundle):
         if redo:
             print "Results already computed for %s %s, but redo is forced." % (_key, _bundle)
@@ -109,9 +110,9 @@ def check_key(r, key, bundle, redo=False, other_keys=[]):
             raise DuplicateBundleAttempt("Results already computed for %s %s" % (_key, _bundle))
     def complete(result=1):
         if type(result) in [str, unicode]:
-            r.hset(_key, bundle, result)
+            r.hset(_key, _bundle, result)
         else:
-            r.hset(_key, bundle, json.dumps(result))
+            r.hset(_key, _bundle, json.dumps(result))
     yield complete
 
 

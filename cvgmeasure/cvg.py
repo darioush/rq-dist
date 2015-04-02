@@ -401,5 +401,5 @@ def test_lists_gen(r, work_dir, input):
                 assert method_len == len(test_methods)
             done(fetch_result)
 
-    return "Success {0}".format(fetch_result)
+    return "Success (fetch={0})".format(fetch_result)
 
