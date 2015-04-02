@@ -394,6 +394,7 @@ def test_lists_gen(r, work_dir, input):
             if fetch_result == 'ok':
                 d4()('compile', '-g')
                 test_methods = d4()('list-tests', '-g').rstrip().split('\n')
+                print "Got methods"
 
                 method_indexes = tn_i_s(r, test_methods, suite, allow_create=True)
                 assert len(method_indexes) == len(test_methods)

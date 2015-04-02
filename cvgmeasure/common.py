@@ -196,23 +196,23 @@ def tn_i_s(r, tns, suite, allow_create=False):
 
             def add_missings(pipe):
                 assert(pipe.hlen(key) == pipe.hlen(key_rev))
+                idxes = pipe.hmget(key, *chunk)
+                assert(len(idxes) == len(chunk))
+
                 last = pipe.get(max_key)
                 last = 0 if last is None else int(last)
-                pipe.multi()
-                idxes = pipe.hmget(key, *chunk)
-                if len(idxes) != len(chunk):
-                    raise Exception('--'.join(idxes) + "    " + '--'.join(chunk))
-                assert(len(idxes) == len(chunk))
                 missings = [tn for (tn, idx) in zip(chunk, idxes) if idx is None]
                 missings_idx = {tn: last + idx for (idx, tn) in enumerate(missings)}
                 missings_idx_rev = {(last + idx): tn for (idx, tn) in enumerate(missings)}
                 assert(len(missings_idx) == len(missings_idx_rev))
+
+                pipe.multi()
+                pipe.incrby(max_key, len(missings))
                 pipe.hmset(key, missings_idx)
                 pipe.hmset(key_rev, missings_idx_rev)
-                pipe.incrby(max_key, len(missings))
 
             assert(r.hlen(key) == r.hlen(key_rev))
-            r.transaction(add_missings, max_key)
+            r.transaction(add_missings, max_key, watch_delay=1)
             assert(r.hlen(key) == r.hlen(key_rev))
             results.append([int(idx) for idx in r.hmget(key, *chunk)])
         else:
