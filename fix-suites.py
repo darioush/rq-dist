@@ -5,9 +5,9 @@ from plumbum import local
 from plumbum.cmd import mkdir, rm, touch
 from optparse import OptionParser
 
-from cvgmeasure.d4 import iter_versions
+from cvgmeasure.d4 import iter_versions, d4
 
-TOOL='randoop'
+TOOL='evosuite-branch-fse'
 IN_DIR=local.path('/scratch/darioush/evosuite-randoop-suites')
 OUT_DIR=local.path('/scratch/darioush/generated-tests')
 
@@ -15,13 +15,17 @@ def get_name_of_tar(tool, project):
     return IN_DIR / "{tool}-{project}-tests.tar".format(tool={
         'randoop': 'randoop',
         'evosuite-branch': 'evosuite',
+        'evosuite-branch-fse': 'evosuite-branch-fse',
+        'evosuite-strongmutation-fse': 'evosuite-strongmutation-fse',
+        'evosuite-weakmutation-fse': 'evosuite-weakmutation-fse',
     }[tool], project=project)
 
-def get_extract_list(tool, project, v):
+def get_extract_list(tool, project, v, mapping = lambda x: x):
+    mapped_v = mapping(v)
     if tool == 'randoop':
         return [(
             '/'.join([project, tool, str(id), "{project}-{version}f-{tool}.{id}.tar.bz2.bak".format(
-                project=project, version=v, tool=tool, id=id
+                project=project, version=mapped_v, tool=tool, id=id
             )]),
             '/'.join([project, str(v), "{tool}-{id}.tar.bz2".format(
                 tool=tool, id=id
@@ -29,14 +33,26 @@ def get_extract_list(tool, project, v):
         ) for id in xrange(1, 11)]
     if tool == 'evosuite-branch':
         return [(
-            '/'.join([project, str(v), project, tool, str(id),
+            '/'.join([project, str(mapped_v), project, tool, str(id),
                 "{project}-{version}f-{tool}.{id}.tar.bz2.bak".format(
-                    project=project, version=v, tool=tool, id=id
+                    project=project, version=mapped_v, tool=tool, id=id
             )]),
             '/'.join([project, str(v), "{tool}-{id}.tar.bz2".format(
                 tool=tool, id=id
             )])
         ) for id in xrange(0, 10)]
+    if tool.startswith('evosuite-') and tool.endswith('-fse'):
+        suite_type = tool[len('evosuite-'):-len('-fse')]
+
+        return [(
+            '/'.join([project, "evosuite-{0}".format(suite_type), str(id),
+                "{project}-{version}-evosuite-{suite_type}.{id}.tar.bz2.bak".format(
+                    project=project, version=mapped_v, suite_type=suite_type, id=id
+            )]),
+            '/'.join([project, str(v), "{tool}-{id}.tar.bz2".format(
+                tool=tool, id=id
+            )])
+        ) for id in xrange(1, 31)]
 
 def extract(t, source, dest):
     if dest.exists():
@@ -54,18 +70,24 @@ def main(options):
     bzip2 = local['bzip2']
     tar = local['tar']
 
-    for project, v in iter_versions(options.restrict_project, options.restrict_version, old=True):
+    for project, v in iter_versions(options.restrict_project, options.restrict_version, old=True, minimum=True):
         tarname = get_name_of_tar(tool, project)
         with tarfile.open(str(tarname), "r") as t:
-            for source, dest in get_extract_list(tool, project, v):
+
+            def mapping(inv, v=v):
+                assert inv == v
+                _, _, result = d4()('match-commits', '-p', project, '-v', '{0}f'.format(inv),  '-c', 'fse-commit-dbs').rstrip().partition('-> ')
+                return int(result)
+
+
+            for source, dest in get_extract_list(tool, project, v, mapping=mapping):
                 alt_source = source[:-len('.bak')]
                 try:
                     extract(t, source, OUT_DIR / dest)
                     # check for broken files
                     fixed_file = t.extractfile(alt_source)
                     with tarfile.open(fileobj=fixed_file) as t_fixed:
-                        broken_files = [name[:-len('.broken')]
-                                for name in t_fixed.getnames() if name.endswith('.broken')]
+                        broken_files = [name[:-len('.broken')] for name in t_fixed.getnames() if name.endswith('.broken')]
                     fixed_file.close()
 
                     # now we have to remove the broken files from the archive

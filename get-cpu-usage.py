@@ -17,7 +17,7 @@ from cvgmeasure.conf import REDIS_URL_RQ, KEYFILE
 
 SCALE_DELTA = 10
 CPU_AUTOSCALE_UP = 70
-WORKERS_MAX = 27
+WORKERS_MAX = 32
 
 SSH_OPTS=('-o', 'StrictHostKeyChecking=no')
 
