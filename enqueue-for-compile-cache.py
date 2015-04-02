@@ -36,6 +36,7 @@ def main():
                     "project": project,
                     "version": v,
                     "suite": suite,
+                    "redo": True,
                     }), print_only=not options.action, timeout=1800, queue_name=options.queue)
 
 if __name__ == "__main__":

@@ -178,8 +178,9 @@ def tn_i_s(r, tns, suite, allow_create=False):
     else:
         raise Exception("Bad type of suite {0}".format(suite))
 
+    max_key = 'tn-i:max:{pre}'.format(pre=prefix)
     if allow_create:
-        last = r.get('tn-i:max:{pre}'.format(pre=prefix))
+        last = r.get(max_key)
         last = 0 if last is None else int(last)
 
     key = 'tn-i:{pre}'.format(pre=prefix)
@@ -193,13 +194,29 @@ def tn_i_s(r, tns, suite, allow_create=False):
             if not allow_create:
                 raise Exception("Could not find idx for tests: {0}".format(' '.join(missings)))
 
-            missings_idx = {tn: last + idx for (idx, tn) in enumerate(missings)}
-            missings_idx_rev = {(last + idx): tn for (idx, tn) in enumerate(missings)}
-            r.incrby('tn-i:max:{pre}'.format(pre=prefix), len(missings))
-            last += len(missings)
-            r.hmset(key, missings_idx)
-            r.hmset(key_rev, missings_idx_rev)
-            assert(len(missings_idx) == len(missings_idx_rev))
+            with r.pipeline() as pipe:
+                while 1:
+                    assert(r.hlen(key) == r.hlen(key_rev))
+                    try:
+                        pipe.watch(max_key)
+                        last = r.get(max_key)
+                        last = 0 if last is None else int(last)
+
+                        pipe.multi()
+                        idxes = r.hmget(key, *chunk)
+                        assert(len(idxes) == len(chunk))
+                        missings = [tn for (tn, idx) in zip(chunk, idxes) if idx is None]
+                        missings_idx = {tn: last + idx for (idx, tn) in enumerate(missings)}
+                        missings_idx_rev = {(last + idx): tn for (idx, tn) in enumerate(missings)}
+                        assert(len(missings_idx) == len(missings_idx_rev))
+                        r.hmset(key, missings_idx)
+                        r.hmset(key_rev, missings_idx_rev)
+                        r.incrby(max_key, len(missings))
+                        pipe.execute()
+                        break
+                    except WatchError:
+                        continue
+
             assert(r.hlen(key) == r.hlen(key_rev))
             results.append([int(idx) for idx in r.hmget(key, *chunk)])
         else:
