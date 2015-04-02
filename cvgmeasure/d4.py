@@ -183,11 +183,15 @@ def _is_ok(i, v):
         return int(min) <= i
     return int(min) <= i <= int(max)
 
-def iter_versions(restrict_project=[], restrict_version=[], old=False):
+def iter_versions(restrict_project=[], restrict_version=[], old=False, minimum=False):
     for project in PROJECTS:
         if restrict_project and project not in restrict_project:
             continue
-        for i in xrange(1, get_num_bugs(project, old) + 1):
+        bug_cnt = get_num_bugs(project, old)
+        if minimum:
+            bug_cnt = min(get_num_bugs(project, not old), bug_cnt)
+
+        for i in xrange(1, bug_cnt + 1):
             if restrict_version and not any(_is_ok(i, v) for v in restrict_version):
                 continue
             yield project, i
