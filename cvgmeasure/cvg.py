@@ -82,47 +82,6 @@ def test_lists(input, hostname, pid):
 
     return "Success"
 
-@job_decorator
-def test_lists_gen(input, hostname, pid):
-    project = input['project']
-    version = input['version']
-    suite   = input['suite']
-    redo    = input.get('redo', False)
-
-    work_dir, d4j_path, redis_url = map(
-            lambda property: get_property(property, hostname, pid),
-            ['work_dir', 'd4j_path', 'redis_url']
-    )
-
-    work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
-    print work_dir
-
-    r = StrictRedis.from_url(redis_url)
-    with check_key(
-            r,
-            'test-lists-created',
-            [project, version, suite],
-            redo=redo,
-            other_keys=['fetch-result', 'test-methods'],
-    ):
-        with refresh_dir(work_dir_path, cleanup=True):
-            with add_to_path(d4j_path):
-                with checkout(project, version, work_dir_path / 'checkout'):
-                    d4()('compile')
-                    gen_tool, _, suite_id = suite.partition('.')
-                    fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
-                    if fetch_result not in ['ok', 'missing', 'empty']:
-                        raise Exception('Unexpected return value from d4 fetch-generated-tests: {response}'.format(
-                            response=fetch_result))
-                    put_key(r, 'fetch-result', [project, version, suite], fetch_result)
-                    if fetch_result == 'ok':
-                        d4()('compile', '-g')
-                        test_methods = d4()('list-tests', '-g').rstrip().split('\n')
-
-                        method_len = put_list(r, 'test-methods', [project, version, suite], test_methods)
-                        assert method_len == len(test_methods)
-
-    return "Success"
 
 @job_decorator
 def run_tests_gen(input, hostname, pid):
@@ -409,4 +368,38 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
 
                 progress_callback(results)
     return "Success ({empty}/{nonempty}/{fail} ENF)".format(empty=empty, nonempty=nonempty, fail=fail)
+
+####
+@job_decorator
+def test_lists_gen(r, work_dir, input):
+    project = input['project']
+    version = input['version']
+    suite   = input['suite']
+    redo    = input.get('redo', False)
+
+    with check_key(
+            r,
+            'fetch',
+            [project, version, suite],
+            redo=redo,
+            other_keys=['tms'],
+    ) as done:
+        with checkout(project, version, work_dir / 'checkout'):
+            d4()('compile')
+            gen_tool, _, suite_id = suite.partition('.')
+            fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
+            if fetch_result not in ['ok', 'missing', 'empty']:
+                raise Exception('Unexpected return value from d4 fetch-generated-tests: {response}'.format(
+                    response=fetch_result))
+            if fetch_result == 'ok':
+                d4()('compile', '-g')
+                test_methods = d4()('list-tests', '-g').rstrip().split('\n')
+
+                method_indexes = tn_i_s(r, test_methods, suite, allow_create=True)
+                assert len(method_indexes) == len(test_methods)
+                method_len = put_list(r, 'tms', [project, version, suite], method_indexes)
+                assert method_len == len(test_methods)
+            done(fetch_result)
+
+    return "Success {0}".format(fetch_result)
 
