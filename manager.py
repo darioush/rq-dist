@@ -112,7 +112,7 @@ def killall(machine, number):
             if is_local(machine, worker.name)]
 
     idle_workers = [worker for worker in machine_workers
-            if worker.get_state() == 'suspended']
+            if worker.get_state() in ['suspended', 'idle']]
 
     for worker in idle_workers[:number]:
         print "Killing %s" % worker.name
