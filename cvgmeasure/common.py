@@ -95,9 +95,9 @@ def get_key(r, key, bundle, field, default=None):
 
 
 @contextmanager
-def check_key(r, key, bundle, redo=False, other_keys=[]):
-    _key = mk_key(key, bundle[:-1])
-    _bundle = ':'.join(map(unicode, bundle[-1:]))
+def check_key(r, key, bundle, redo=False, other_keys=[], split_at=-1):
+    _key = mk_key(key, bundle[:split_at])
+    _bundle = ':'.join(map(unicode, bundle[split_at:]))
     print _key, _bundle
     if r.hexists(_key, _bundle):
         if redo:

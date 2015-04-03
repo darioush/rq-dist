@@ -210,10 +210,8 @@ def test_cvg_methods(input, hostname, pid):
     )
 
 
-
-
+###### Restructured for new schema
 ###### Refactored jobs #######
-
 @job_decorator
 def compile_cache(r, work_dir, input, key_to_check='compile-cache'):
     project   = input['project']
@@ -222,12 +220,14 @@ def compile_cache(r, work_dir, input, key_to_check='compile-cache'):
     suite     = input['suite']
     redo      = input.get('redo', False)
 
+    upload_bytes = 0
     with check_key(
             r,
             key_to_check,
             [cvg_tool, project, version, suite],
             redo=redo,
             other_keys=[],
+            split_at=0,
     ) as done:
         with checkout(project, version, work_dir / 'checkout'):
             coverage_setup_and_reset(cvg_tool, suite)
@@ -240,10 +240,9 @@ def compile_cache(r, work_dir, input, key_to_check='compile-cache'):
             sio.close()
             print "Uploaded {upload_bytes} bytes to s3".format(upload_bytes=upload_bytes)
         done()
-    return "Success"
+    return "Success (bytes={bytes})".format(bytes=upload_bytes)
 
 
-#### Restructured for new schema
 def coverage_setup_and_reset(cvg_tool, suite):
     generated = not (suite == 'dev')
     compile_if_needed(cvg_tool)
@@ -369,7 +368,6 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
                 progress_callback(results)
     return "Success ({empty}/{nonempty}/{fail} ENF)".format(empty=empty, nonempty=nonempty, fail=fail)
 
-####
 @job_decorator
 def test_lists_gen(r, work_dir, input):
     project = input['project']
