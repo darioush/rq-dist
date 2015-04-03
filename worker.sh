@@ -9,4 +9,4 @@ else
 fi
 
 source env/bin/activate
-nohup rqworker --url redis://nest.cs.washington.edu:6379/0 $queues >/dev/null 2>&1 &
+nohup rqworker --url redis://tern.cs.washington.edu:6379/0 $queues >/dev/null 2>&1 &
