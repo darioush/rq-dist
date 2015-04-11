@@ -156,7 +156,11 @@ def get_tar_gz_str(files, out='output.tar.gz'):
     return result
 
 
-def test(extra_args=[]):
+def test(extra_args=[], generated=False, single_test=None):
+    if generated:
+        extra_args = ['-g'] + extra_args
+    if single_test is not None:
+        extra_args = extra_args + ['-t', single_test]
     lines = d4()['test'](*extra_args).rstrip().split('\n')
     count_matches = [re.match(r'Failing tests: (\d+)', line) for line in lines]
     fail_matches = [re.match(r'\s+- (.*)', line) for line in lines]

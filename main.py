@@ -56,13 +56,27 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
     r = StrictRedis.from_url(get_property('redis_url'))
     for tail_key in tail_keys_to_iterate:
         for project, i in iter_versions(restrict_project, restrict_version):
+
+            if source_key.startswith('file:'):
+                key_type = 'file'
+                _, _, fn = source_key.partition(':')
+                source_key = 'file'
+                file_data = {}
+                with open(fn) as f:
+                    for line in f:
+                        line_data = json.loads(line)
+                        file_data.update(line_data)
+            else:
+                key_type = r.type(key)
+
             key = mk_key(source_key, [project, i] + tail_key)
-            key_type = r.type(key)
 
             if key_type == 'list':
                 size = r.llen(key)
             elif key_type == 'hash':
                 size = r.hlen(key)
+            elif key_type == 'file':
+                size = len(file_data[key])
             elif key_type == 'none':
                 size = 0
             else:
@@ -80,10 +94,13 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
 
             if key_type == 'hash':
                 all_items = r.hkeys(key)
+            elif key_type == 'file':
+                all_items = file_data[key]
+
             for j in xrange(bundle_offset, size, bundle_size):
                 if key_type == 'list':
                     bundle = r.lrange(key, j, j+bundle_size-1)
-                elif key_type == 'hash':
+                elif key_type in ('hash', 'file'):
                     bundle = all_items[j:j+bundle_size]
                 elif key_type == 'none':
                     bundle = []
@@ -116,8 +133,10 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
                         doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
                 else:
                     input = {'project': project, 'version': i, bundle_key: bundle}
+                    tk_input = {} if tail_key_descr is None else {tail_key_descr: ':'.join(tail_key)}
                     additionals = json.loads(json_str)
                     input.update(additionals)
+                    input.update(tk_input)
                     input.update({'timeout': timeout})
                     doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
 

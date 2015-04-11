@@ -83,57 +83,6 @@ def test_lists(input, hostname, pid):
     return "Success"
 
 
-@job_decorator
-def run_tests_gen(input, hostname, pid):
-    project = input['project']
-    version = input['version']
-    suite   = input['suite']
-    passcnt = input['passcnt']
-    tests   = input['tests']
-    redo    = input.get('redo', False)
-
-    work_dir, d4j_path, redis_url = map(
-            lambda property: get_property(property, hostname, pid),
-            ['work_dir', 'd4j_path', 'redis_url']
-    )
-
-    work_dir_path = local.path(work_dir) / ('child.%d' % os.getpid())
-    print work_dir
-
-    r = StrictRedis.from_url(redis_url)
-    with filter_key_list(
-            r,
-            key='test-methods-exec',
-            bundle=['exec', project, version, suite],
-            list=tests,
-            redo=redo,
-            other_keys=[],
-    ) as worklist:
-        with refresh_dir(work_dir_path, cleanup=True):
-            with add_to_path(d4j_path):
-                with checkout(project, version, work_dir_path / 'checkout'):
-                    d4()('compile')
-                    gen_tool, _, suite_id = suite.partition('.')
-                    fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
-                    if fetch_result != "ok":
-                        raise Exception('Unexpected return value from d4 fetch-generated-tests')
-                    d4()('compile', '-g')
-
-                    for t, progress_callback in worklist:
-                        num_success = int(get_key(r, 'passcnt', [project, version, suite], t, default=0))
-                        num_runs = passcnt - num_success
-                        for run in xrange(0, num_runs):
-                            print "run {run}/{num_runs} of {t}".format(run=(run+1), num_runs=num_runs, t=t)
-                            fails = test(extra_args=['-g', '-t', t])
-                            if len(fails) == 0:
-                                inc_key(r, 'passcnt', [project, version, suite], t)
-                            elif len(fails) == 1:
-                                put_into_set(r, 'fail', ['exec', project, version, suite], t)
-                                break
-                            else:
-                                raise Exception('Bad code')
-                        progress_callback()
-    return "Success"
 
 
 @job_decorator
@@ -318,7 +267,7 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
             worklist_map=lambda tns: tn_i_s(r, tns, suite)
     ) as worklist:
         with cache_or_checkout_and_coverage_setup_and_reset(
-                project,
+               project,
                 version,
                 'compile-cache',
                 [cvg_tool, project, version], suite,
@@ -367,6 +316,51 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
 
                 progress_callback(results)
     return "Success ({empty}/{nonempty}/{fail} ENF)".format(empty=empty, nonempty=nonempty, fail=fail)
+
+@job_decorator
+def run_tests(r, work_dir, input):
+    project            = input['project']
+    version            = input['version']
+    suite              = input['suite']
+    passcnt            = input['passcnt']
+    tests              = input['tests']
+    redo               = input.get('redo', False)
+    timeout            = input.get('timeout', 1800)
+    individual_timeout = input.get('individual_timeout', None)
+    generated          = not (suite == 'dev')
+
+    with checkout(project, version, work_dir / 'checkout'):
+        d4()('compile')
+
+        if generated:
+            gen_tool, _, suite_id = suite.partition('.')
+            fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
+            if fetch_result != "ok":
+                raise Exception('Unexpected return value from d4 fetch-generated-tests')
+            d4()('compile', '-g')
+
+        pass_tc, fail_tc = 0, 0
+        for counter, (tc, tc_idx) in enumerate(zip(tests, tn_i_s(r, tests, suite))):
+            print "{tc} (= {idx}) ({counter}/{total})".format(tc=tc, idx=tc_idx,
+                    counter=counter + 1, total=len(tests))
+            num_success = int(get_key(r, 'passcnt', [project, version, suite], tc, default=0))
+            num_runs = passcnt - num_success
+            for run in xrange(0, num_runs):
+                print "run {run}/{num_runs} of {tc}".format(run=(run+1), num_runs=num_runs, tc=tc)
+                fails = test(single_test=tc, generated=generated)
+                if len(fails) == 0:
+                    print "- passed"
+                    inc_key(r, 'passcnt', [project, version, suite], tc_idx)
+                elif len(fails) == 1:
+                    print "- failed"
+                    put_into_set(r, 'fail', ['exec', project, version, suite], tc_idx)
+                    fail_tc += 1
+                    break
+                else:
+                    raise Exception('Bad code')
+            else:
+                pass_tc += 1
+    return "Success (p={pass_tc}/f={fail_tc})".format(pass_tc=pass_tc, fail_tc=fail_tc)
 
 @job_decorator
 def test_lists_gen(r, work_dir, input):
