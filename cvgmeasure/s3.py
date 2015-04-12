@@ -9,6 +9,12 @@ from cvgmeasure.conf import get_property
 
 s3 = boto.s3.connect_to_region('us-west-2')
 
+
+def list_from_s3(bucket_name, bundle):
+    key_name = '/'.join(map(str, bundle)) + '/'
+    b = s3.lookup(bucket_name)
+    return b.list(key_name)
+
 def put_into_s3(bucket_name, bundle, t, f):
     key_name = '/'.join(map(str, bundle) + [t])
     b = s3.lookup(bucket_name)

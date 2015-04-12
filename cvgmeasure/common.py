@@ -143,7 +143,7 @@ def filter_key_list(r, key, bundle, list, redo=False, other_keys=[], worklist_ma
         raise DuplicateBundleAttempt("No more items left to compute for %s" % _key)
 
     if redo:
-        worklist_pairs = list_pairs
+        worklist = list_pairs
     else:
         worklist = filtered_list
 

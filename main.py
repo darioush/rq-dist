@@ -6,6 +6,7 @@ import importlib
 from optparse import OptionParser
 from rq import Queue
 from redis import StrictRedis
+from collections import defaultdict
 
 from cvgmeasure.common import mk_key, get_fun, doQ
 from cvgmeasure.conf import REDIS_URL_RQ, get_property
@@ -54,19 +55,21 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
 
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
     r = StrictRedis.from_url(get_property('redis_url'))
+
+    key_type = None # such hack
+    if source_key.startswith('file:'):
+        key_type = 'file'
+        _, _, fn = source_key.partition(':')
+        source_key = 'file'
+        file_data = defaultdict(list)
+        with open(fn) as f:
+            for line in f:
+                line_data = json.loads(line)
+                file_data.update(line_data)
+
     for tail_key in tail_keys_to_iterate:
         for project, i in iter_versions(restrict_project, restrict_version):
-
-            if source_key.startswith('file:'):
-                key_type = 'file'
-                _, _, fn = source_key.partition(':')
-                source_key = 'file'
-                file_data = {}
-                with open(fn) as f:
-                    for line in f:
-                        line_data = json.loads(line)
-                        file_data.update(line_data)
-            else:
+            if key_type != 'file':
                 key_type = r.type(key)
 
             key = mk_key(source_key, [project, i] + tail_key)

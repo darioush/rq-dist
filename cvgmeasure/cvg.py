@@ -227,7 +227,7 @@ def cache_or_checkout_and_coverage_setup_and_reset(project, version, bucket, bun
             yield
 
 @job_decorator
-def generated_cvg(r, work_dir, input):
+def generated_cvg(r, work_dir, input): #deprecated
     return handle_test_cvg_bundle(
         r,
         work_dir,
@@ -239,6 +239,18 @@ def generated_cvg(r, work_dir, input):
         fail_key='fail',
     )
 
+@job_decorator
+def do_cvg(r, work_dir, input):
+    return handle_test_cvg_bundle(
+        r,
+        work_dir,
+        input,
+        input_key='tests',
+        check_key='exec',
+        non_empty_key='nonempty',
+        pass_count_key='passcnt',
+        fail_key='fail',
+    )
 
 def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_key,
         pass_count_key=None, fail_key=None):

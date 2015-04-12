@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from cvgmeasure.d4 import iter_versions, is_empty
 from cvgmeasure.conf import get_property_defaults, REDIS_URL_RQ
 from cvgmeasure.common import mk_key, i_tn_s, tn_i_s, chunks
+from cvgmeasure.s3 import list_from_s3
 
 BUNDLE_SIZE=50
 BUNDLE_FN='bundlefiles/bundle.out'
@@ -20,13 +21,9 @@ RESET_BUNDLE_FN=True
 def check_int(idxes):
     assert(all(type(x) is int for x in idxes))
 
-#def b_pvs(r, bundle, idxes, key='tests'):
-#    return {'project' : bundle[0], 'version': bundle[1], 'suite': bundle[2], key: i_tn_s(r, idxes, bundle[2])}
-#
-#def b_tpvs(bundle, idxes, key='tests'):
-#    tmp = {'tool': bundle[0]}
-#    tmp.update(b_pvs(r, bundle[1:], idxes, key))
-#    return tmp
+def b_tpvs(bundle, key='tests'):
+    tool, = bundle[:1]
+    return b_pvs(bundle[1:]) + ' -K cvg_tool -a {tool} '.format(tool=tool)
 
 def b_pvs(bundle, key='tests'):
     project, version, suite = bundle[:3]
@@ -54,15 +51,16 @@ class Straggler(Exception):
         fun_dotted, bundle_fun, params = self.fix
         my_bundle = bundle_fun(self.bundle)
         print fun_dotted, params
-        print ('python main.py qb-slice {fun_dotted} -b {bundle_size} ' +
+        sys.stderr.write((
+                'python main.py qb-slice {fun_dotted} -b {bundle_size} ' +
                 ' -S file:{bundle_fn}  -M cvgmeasure.common.M ' +
-                ' {params} {extra_opts}').format(
+                ' {params} {extra_opts}\n').format(
                         fun_dotted=fun_dotted,
                         bundle_size=BUNDLE_SIZE,
                         bundle_fn=BUNDLE_FN,
                         params=params(my_bundle),
                         extra_opts=EXTRA_OPTS,
-                )
+                ))
         with open(BUNDLE_FN, 'a') as  f:
             f.write(json.dumps({':'.join(map(str, ['file'] + my_bundle)): self.idxes}))
             f.write('\n')
@@ -157,11 +155,38 @@ def check_cvg(r, tool, project, v, suite, t_idxs, ts):
     else:
         nil_idxes = [t_idx for (t_idx, _) in nils]
 
+    if tool == 'cobertura' and nil_idxes:
+        raise Straggler('COBERTURA_NOT_RUN', [project, v, suite],
+                idxes=nil_idxes,
+                fix=(
+                    'cvgmeasure.cvg.do_cvg',
+                    lambda bundle: bundle,
+                    lambda bundle: b_pvs(bundle) + " -K cvg_tool -a cobertura"
+                ))
+
     cc = cobertura_covers(r, project, v, suite, nil_idxes)
     if cc != []:
         raise Straggler('-- {project}:{v}:{suite} -- [{idxes}] should have been 0 coverage by cobertura'.format(
             project=project,v=v,suite=suite,
             idxes=' '.join(map(str,cc))))
+
+    # time to check s3
+    non_nils = [(t_idx, t) for (t_idx, t, cvg_info) in zip(t_idxs, ts, cvg_infos) if cvg_info is not None and not is_empty(tool, json.loads(cvg_info))]
+    print '- non-nil len: {0}'.format(len(non_nils))
+    if non_nils:
+        s3_list = list_from_s3('cvg-files', [tool, project, v, suite])
+        s3_tname_list = set([key.name.rpartition('/')[2] for key in s3_list])
+        non_nils_missing_from_s3 = [(t_idx, t) for (t_idx, t) in non_nils if t not in s3_tname_list]
+        if len(non_nils_missing_from_s3) != 0:
+            raise Straggler('NON_NIL_CVG_BUT_NO_S3', [tool, project, v, suite],
+                    idxes=[t_idx for (t_idx, _) in non_nils_missing_from_s3],
+                    fix=(
+                        'cvgmeasure.cvg.do_cvg',
+                        lambda bundle: bundle[1:],
+                        lambda bundle: b_pvs(bundle) + " -K cvg_tool -a {tool} -j '{{\"redo\": true}}'".format(tool=tool)
+                    ))
+        return "Cvg for in s3 : {0}".format(len(non_nils))
+
 
 
 
@@ -211,10 +236,11 @@ def main():
                 print "- {tool}:{project}:{v}:{suite}".format(tool=tool, project=project, v=v, suite=suite)
                 with run_with_fixes():
                     fails = get_fails(r, tool, project, v, suite, v_idxs)
-                    passing = [(v_idx, v_tns) for (v_idx, v_tns) in zip(v_idxs, v_tns) if v_idx not in fails]
+                    passing = [(v_idx, v_tn) for (v_idx, v_tn) in zip(v_idxs, v_tns) if v_idx not in fails]
                     print len(passing), len(fails)
                     p_idxs, p_tns = zip(*passing)
                     cvg_info = check_cvg(r, tool, project, v, suite, p_idxs, p_tns)
+                    print cvg_info
 
 
         print 'suite {suite} tms: {tms}'.format(suite=suite, tms=suite_tms)

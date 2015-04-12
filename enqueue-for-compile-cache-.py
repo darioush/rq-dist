@@ -23,7 +23,8 @@ def main():
     (options, args) = parser.parse_args(sys.argv)
 
     TOOLS  = ['cobertura', 'codecover', 'jmockit', 'major']
-    SUITES = ['evosuite-strongmutation-fse.{i}'.format(i=i) for i in xrange(21,31)]
+    SUITES = ['dev']
+             #['evosuite-strongmutation-fse.{i}'.format(i=i) for i in xrange(21,31)]
              # ['randoop.{i}'.format(i=i) for i in xrange(1,11)] + \
              #   ['evosuite-branch.{i}'.format(i=i) for i in xrange(0,10)]
 
@@ -31,7 +32,7 @@ def main():
         for project, v in iter_versions(options.restrict_project, options.restrict_version):
             for tool in TOOLS:
                 result = r.hget(mk_key('fetch', [project, v]), suite)
-                if result == 'ok':
+                if result == 'ok' or suite == 'dev':
                     single_enqueue('cvgmeasure.cvg.compile_cache', json.dumps({
                         "project": project,
                         "version": v,
