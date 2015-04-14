@@ -269,3 +269,7 @@ def downsize5(j):
 
 def downsize10(j):
     return downsize(j, down_to=10)
+
+def downsize1(j):
+    return downsize(j, down_to=1)
+

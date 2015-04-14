@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 import sys
 import json
+import click
 
 from collections import defaultdict
 from redis import StrictRedis
@@ -8,12 +9,15 @@ from optparse import OptionParser
 from rq import Queue
 from contextlib import contextmanager
 
+from colorama import init
+from colorama import Fore, Back, Style
+init(autoreset=True)
+
 from cvgmeasure.d4 import iter_versions, is_empty
 from cvgmeasure.conf import get_property_defaults, REDIS_URL_RQ
 from cvgmeasure.common import mk_key, i_tn_s, tn_i_s, chunks
 from cvgmeasure.s3 import list_from_s3
 
-BUNDLE_SIZE=50
 BUNDLE_FN='bundlefiles/bundle.out'
 EXTRA_OPTS=''
 RESET_BUNDLE_FN=True
@@ -50,13 +54,15 @@ class Straggler(Exception):
     def do_fix(self):
         fun_dotted, bundle_fun, params = self.fix
         my_bundle = bundle_fun(self.bundle)
-        print fun_dotted, params
+        print Fore.RED + 'Straggler found: {kind} {fun_dotted}, {bundle}'.format(
+            kind=self.kind,
+            fun_dotted=fun_dotted,
+            bundle=':'.join(map(str, self.bundle)))
         sys.stderr.write((
-                'python main.py qb-slice {fun_dotted} -b {bundle_size} ' +
+                'python main.py qb-slice {fun_dotted} ' +
                 ' -S file:{bundle_fn}  -M cvgmeasure.common.M ' +
                 ' {params} {extra_opts}\n').format(
                         fun_dotted=fun_dotted,
-                        bundle_size=BUNDLE_SIZE,
                         bundle_fn=BUNDLE_FN,
                         params=params(my_bundle),
                         extra_opts=EXTRA_OPTS,
@@ -156,19 +162,23 @@ def check_cvg(r, tool, project, v, suite, t_idxs, ts):
         nil_idxes = [t_idx for (t_idx, _) in nils]
 
     if tool == 'cobertura' and nil_idxes:
-        raise Straggler('COBERTURA_NOT_RUN', [project, v, suite],
+        raise Straggler('COBERTURA_NOT_RUN', [tool, project, v, suite],
                 idxes=nil_idxes,
                 fix=(
                     'cvgmeasure.cvg.do_cvg',
-                    lambda bundle: bundle,
-                    lambda bundle: b_pvs(bundle) + " -K cvg_tool -a cobertura"
+                    lambda bundle: bundle[1:],
+                    lambda bundle: b_pvs(bundle) + " -K cvg_tool -a {tool}".format(tool=tool)
                 ))
 
     cc = cobertura_covers(r, project, v, suite, nil_idxes)
     if cc != []:
-        raise Straggler('-- {project}:{v}:{suite} -- [{idxes}] should have been 0 coverage by cobertura'.format(
-            project=project,v=v,suite=suite,
-            idxes=' '.join(map(str,cc))))
+        raise Straggler('CVG_NOT_RUN_COBERTURA_NONEMPTY', [tool, project, v, suite],
+                idxes=cc,
+                fix=(
+                    'cvgmeasure.cvg.do_cvg',
+                    lambda bundle: bundle[1:],
+                    lambda bundle: b_pvs(bundle) + " -K cvg_tool -a {tool}".format(tool=tool)
+                ))
 
     # time to check s3
     non_nils = [(t_idx, t) for (t_idx, t, cvg_info) in zip(t_idxs, ts, cvg_infos) if cvg_info is not None and not is_empty(tool, json.loads(cvg_info))]

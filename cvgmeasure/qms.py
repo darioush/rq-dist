@@ -158,7 +158,7 @@ def get_tgs_codecover_raw(tar):
                 len(xpath.find('span[contains(@class, "%s_Coverage")]' % token, line)) == 0
                 for token in ("Loop", "Branch", "Statement", "Operator")
         )
-        branches_only = all( ## Terms are allowed too, e.g., } else if { ... 
+        branches_only = all( ## Terms are allowed too, e.g., } else if { ...
                 len(xpath.find('span[contains(@class, "%s_Coverage")]' % token, line)) == 0
                 for token in ("Loop", "Statement", "Operator")
         )

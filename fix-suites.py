@@ -7,7 +7,7 @@ from optparse import OptionParser
 
 from cvgmeasure.d4 import iter_versions, d4
 
-TOOL='evosuite-branch-fse'
+TOOL='evosuite-weakmutation-fse'
 IN_DIR=local.path('/scratch/darioush/evosuite-randoop-suites')
 OUT_DIR=local.path('/scratch/darioush/generated-tests')
 
@@ -52,7 +52,7 @@ def get_extract_list(tool, project, v, mapping = lambda x: x):
             '/'.join([project, str(v), "{tool}-{id}.tar.bz2".format(
                 tool=tool, id=id
             )])
-        ) for id in xrange(1, 31)]
+        ) for id in xrange(10, 11)]
 
 def extract(t, source, dest):
     if dest.exists():
