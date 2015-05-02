@@ -104,7 +104,8 @@ def check_test_list(r, project, v, suite):
     return map(int, test_list), test_names
 
 def cobertura_covers(r, project, v, suite, idxes):
-    return covers(r, 'cobertura', project, v, suite, idxes)
+    fail_on_cobertura = set(get_fails(r, 'cobertura', project, v, suite, idxes))
+    return covers(r, 'cobertura', project, v, suite, [idx for idx in idxes if idx not in fail_on_cobertura])
 
 def covers(r, tool, project, v, suite, idxes):
     lookup_key = mk_key('exec', [tool, project, v, suite])
@@ -129,8 +130,12 @@ def get_fails(r, tool, project, v, suite, idxes):
         passes = defaultdict(int, zip(idxes, map(lambda x: 0 if x is None else int(x), r.hmget(pass_key, *failed_but_not_exec))))
         failed_but_known_to_pass = [idx for idx in failed_but_not_exec if passes[idx] > 0]
         if failed_but_known_to_pass:
-            raise Straggler('-- {project}:{v}:{suite}: {idxes} have failed but are known to pass'.format(project=project, v=v, suite=suite,
-                idxes=' '.join(map(str, failed_but_known_to_pass)))
+            raise Straggler('FAIL_BUT_KNOWN_TO_PASS', [tool, project, v, suite], failed_but_known_to_pass,
+                    fix=(
+                        'cvgmeasure.cvg.do_cvg',
+                        lambda bundle: bundle[1:],
+                        lambda bundle: b_pvs(bundle) + " -K cvg_tool -a {tool}".format(tool=tool)
+                        )
             )
 
         raise Straggler('FAIL_BUT_NOT_EXEC', [tool, project, v, suite], failed_but_not_exec,
@@ -234,6 +239,7 @@ def main():
         suites = ['dev']
 
     total_tms = 0
+    stragglers = False
     for suite in suites:
         suite_tms = 0
         for project, v in iter_versions(options.restrict_project, options.restrict_version):
@@ -244,6 +250,7 @@ def main():
             for tool_ in tools:
                 tool = ''.join(tool_)
                 print "- {tool}:{project}:{v}:{suite}".format(tool=tool, project=project, v=v, suite=suite)
+                wasOK = False
                 with run_with_fixes():
                     fails = get_fails(r, tool, project, v, suite, v_idxs)
                     passing = [(v_idx, v_tn) for (v_idx, v_tn) in zip(v_idxs, v_tns) if v_idx not in fails]
@@ -251,10 +258,13 @@ def main():
                     p_idxs, p_tns = zip(*passing)
                     cvg_info = check_cvg(r, tool, project, v, suite, p_idxs, p_tns)
                     print cvg_info
-
+                    wasOK = True
+                stragglers |= (not wasOK)
 
         print 'suite {suite} tms: {tms}'.format(suite=suite, tms=suite_tms)
     print 'total tms', total_tms
+    if not stragglers:
+        print Fore.GREEN + "NO STRAGGLERS"
 
 
 if __name__ == "__main__":

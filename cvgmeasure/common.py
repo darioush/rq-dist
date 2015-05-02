@@ -75,6 +75,11 @@ def mk_key(key, bundle):
     return ':'.join([key] + map(unicode, bundle))
 
 
+def del_from_set(r, key, bundle, member):
+    _key = mk_key(key, bundle)
+    return r.srem(_key, member)
+
+
 def put_into_set(r, key, bundle, member):
     _key = mk_key(key, bundle)
     return r.sadd(_key, member)

@@ -15,7 +15,7 @@ from cvgmeasure.common import job_decorator
 from cvgmeasure.common import check_key, filter_key_list, mk_key
 from cvgmeasure.common import tn_i_s
 from cvgmeasure.common import put_list, put_into_hash, put_key
-from cvgmeasure.common import get_key, inc_key, put_into_set
+from cvgmeasure.common import get_key, inc_key, put_into_set, del_from_set
 from cvgmeasure.conf import get_property
 from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage
 from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_file, add_to_path, compile_if_needed, add_timeout
@@ -227,19 +227,6 @@ def cache_or_checkout_and_coverage_setup_and_reset(project, version, bucket, bun
             yield
 
 @job_decorator
-def generated_cvg(r, work_dir, input): #deprecated
-    return handle_test_cvg_bundle(
-        r,
-        work_dir,
-        input,
-        input_key='tests',
-        check_key='exec',
-        non_empty_key='nonempty',
-        pass_count_key='passcnt',
-        fail_key='fail',
-    )
-
-@job_decorator
 def do_cvg(r, work_dir, input):
     return handle_test_cvg_bundle(
         r,
@@ -301,6 +288,9 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
 
                     if pass_count_key is not None:
                         inc_key(r, pass_count_key, [project, version, suite], tc_idx) # note the different bundle
+
+                    if redo and fail_key is not None:
+                        del_from_set(r, fail_key, [cvg_tool, project, version, suite], tc_idx)
 
                     print results
 
