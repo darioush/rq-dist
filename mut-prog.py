@@ -25,7 +25,7 @@ def main():
     print infos
     print '\n'.join(['{<8pid} {mut}/{max}'.format(pid=inf['pid'],
         mut=max(inf['running']),
-        max=info['total']) for inf in infos])
+        max=inf['total']) for inf in infos])
 
 #5865 ant-launcher.jar -f /home/ec2-user/defects4j/framework/build-scripts/Math/Math.build.xml -Dscript.dir=/home/ec2-user/defects4j/framework -Dbasedir=/tmp/worker.ip-172-31-25-99.5851/checkout -Dmajor.exclude=/tmp/worker.ip-172-31-25-99.5851/checkout/exclude.txt -Dmajor.kill.log=/tmp/worker.ip-172-31-25-99.5851/checkout/kill.csv -logfile /tmp/worker.ip-172-31-25-99.5851/checkout/.mutation.log -Dtest.entry.class=org.apache.commons.math3.analysis.function.SincTest -Dtest.entry.method=testDerivativeShortcut mutation.test
 
