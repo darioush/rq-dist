@@ -23,7 +23,7 @@ def main():
 
     infos = sorted([info(line) for line in mutations], key=lambda x: x['pid'])
     print '\n'.join(['{pid:<8} {mut:>5}/{max:>5} {l}'.format(pid=inf['pid'],
-        mut=max(inf['running']),
+        mut=max(inf['running']) if inf['running'] else 0,
         l=len(inf['running']),
         max=inf['total']) for inf in infos])
 
