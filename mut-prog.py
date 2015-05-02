@@ -15,7 +15,7 @@ def main():
         total_muts = wc(dir + '/mutants.log')
 
         mutants = jstack(pid).rstrip().split('\n')
-        executing_muts = [int(match.group(0)) for match in
+        executing_muts = [int(match.group(1)) for match in
                 [re.match(r'"Mutant-(\d+)" .*', line) for line in mutants]
                 if match is not None]
         print executing_muts
