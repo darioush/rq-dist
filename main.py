@@ -69,10 +69,10 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
 
     for tail_key in tail_keys_to_iterate:
         for project, i in iter_versions(restrict_project, restrict_version):
+            key = mk_key(source_key, [project, i] + tail_key)
+
             if key_type != 'file':
                 key_type = r.type(key)
-
-            key = mk_key(source_key, [project, i] + tail_key)
 
             if key_type == 'list':
                 size = r.llen(key)

@@ -6,7 +6,7 @@ import redis
 from contextlib import contextmanager
 from plumbum import local
 
-from cvgmeasure.conf import get_property_defaults
+from cvgmeasure.conf import get_property_defaults, REDIS_URL_TG
 from cvgmeasure.d4 import refresh_dir, add_to_path
 
 def get_fun(fun_dotted):
@@ -44,6 +44,25 @@ def job_decorator(f):
 
     return decorated
 
+
+def job_decorator_tg(f):
+    def decorated(input, f=f, *args, **kwargs):
+        f_in = json.loads(input)
+        work_dir, d4j_path, redis_url = map(
+                lambda property: get_property_defaults(property),
+                ['work_dir', 'd4j_path', 'redis_url']
+        )
+
+        work_dir_path = local.path(work_dir)
+        print "Working directory {0}".format(work_dir_path)
+
+        with refresh_dir(work_dir_path, cleanup=True):
+            with add_to_path(d4j_path):
+                with connect_to_redis(redis_url) as r:
+                    with connect_to_redis(REDIS_URL_TG) as rr:
+                        return f(r, rr, work_dir_path, f_in, *args, **kwargs)
+
+    return decorated
 
 @contextmanager
 def connect_to_redis(url):
@@ -94,6 +113,12 @@ def get_key(r, key, bundle, field, default=None):
         return result
 
 
+def _json_if_needed(result):
+    if type(result) in [str, unicode]:
+        return result
+    else:
+        return json.dumps(result)
+
 @contextmanager
 def check_key(r, key, bundle, redo=False, other_keys=[], split_at=-1):
     _key = mk_key(key, bundle[:split_at])
@@ -109,10 +134,7 @@ def check_key(r, key, bundle, redo=False, other_keys=[], split_at=-1):
         else:
             raise DuplicateBundleAttempt("Results already computed for %s %s" % (_key, _bundle))
     def complete(result=1):
-        if type(result) in [str, unicode]:
-            r.hset(_key, _bundle, result)
-        else:
-            r.hset(_key, _bundle, json.dumps(result))
+        r.hset(_key, _bundle, _json_if_needed(result))
     yield complete
 
 
@@ -147,8 +169,8 @@ def filter_key_list(r, key, bundle, list, redo=False, other_keys=[], worklist_ma
     else:
         worklist = filtered_list
 
-    yield zip(worklist, [lambda result=1, my_item=item: r.hset(_key, my_item, json.dumps(result)) for (_, item)
-                in worklist])
+    yield zip(worklist, [lambda result=1, my_item=item: r.hset(_key, my_item, _json_if_needed(result))
+        for (_, item) in worklist])
 
 
 def chunks(l, n):
@@ -161,35 +183,20 @@ def flatten(l):
     return reduce(lambda a, b : a+b, l, [])
 
 
-def tn_i_s(r, tns, suite, allow_create=False):
-    # Randoop names are deterministic. Save DB space by not putting them there
-    if suite.startswith('randoop'):
-        groups = [re.match(r'RandoopTest(\d+)::test(\d+)', tn) for tn in tns]
-        if any([group is None for group in groups]):
-            raise Exception("Bad randoop test name")
-        nums = [(int(group.group(1)), int(group.group(2))) for group in groups]
-        idxs = [class_num * 1000 + method_num for (class_num, method_num) in nums]
-        return idxs
-
-    if suite.startswith('evo'):
-        prefix = 'evo'
-    elif suite == 'dev':
-        prefix = 'dev'
-    else:
-        raise Exception("Bad type of suite {0}".format(suite))
-
-    max_key = 'tn-i:max:{pre}'.format(pre=prefix)
+def items_to_indexes(r, items, key_, key_rev_, bundle, allow_create=False, chunk_size=100):
+    bundle_str = ':'.join(map(str, bundle))
+    max_key = '{key}:max:{bundle}'.format(key=key_, bundle=bundle_str)
     if allow_create:
         last = r.get(max_key)
         last = 0 if last is None else int(last)
 
-    key = 'tn-i:{pre}'.format(pre=prefix)
-    key_rev = 'i-tn:{pre}'.format(pre=prefix)
+    key = '{key}:{bundle}'.format(key=key_, bundle=bundle_str)
+    key_rev = '{key_rev}:{bundle}'.format(key_rev=key_rev_, bundle=bundle_str)
     results = []
-    for chunk in chunks(tns, 100):
+    for chunk in chunks(items, chunk_size):
         idxes = r.hmget(key, *chunk)
         assert(len(idxes) == len(chunk))
-        missings = [tn for (tn, idx) in zip(chunk, idxes) if idx is None]
+        missings = [item for (item, idx) in zip(chunk, idxes) if idx is None]
         if missings:
             if not allow_create:
                 raise Exception("Could not find idx for tests: {0}".format(' '.join(missings)))
@@ -201,9 +208,9 @@ def tn_i_s(r, tns, suite, allow_create=False):
 
                 last = pipe.get(max_key)
                 last = 0 if last is None else int(last)
-                missings = [tn for (tn, idx) in zip(chunk, idxes) if idx is None]
-                missings_idx = {tn: last + idx for (idx, tn) in enumerate(missings)}
-                missings_idx_rev = {(last + idx): tn for (idx, tn) in enumerate(missings)}
+                missings = [item for (item, idx) in zip(chunk, idxes) if idx is None]
+                missings_idx = {item: last + idx for (idx, item) in enumerate(missings)}
+                missings_idx_rev = {(last + idx): item for (idx, item) in enumerate(missings)}
                 assert(len(missings_idx) == len(missings_idx_rev))
 
                 if len(missings_idx) == 0: # cannot set an empty length mapping
@@ -223,6 +230,37 @@ def tn_i_s(r, tns, suite, allow_create=False):
     return flatten(results)
 
 
+def indexes_to_items(r, i_s, key_rev_, bundle, chunk_size=100):
+    bundle_str = ':'.join(map(str, bundle))
+    key_rev = '{key_rev}:{bundle}'.format(key_rev=key_rev_, bundle=bundle_str)
+    results = []
+    for chunk in chunks(i_s, 100):
+        tns = r.hmget(key_rev, *chunk)
+        assert(len(tns) == len(chunk))
+        results.append(tns)
+    return flatten(results)
+
+
+def tn_i_s(r, tns, suite, allow_create=False):
+    # Randoop names are deterministic. Save DB space by not putting them there
+    if suite.startswith('randoop'):
+        groups = [re.match(r'RandoopTest(\d+)::test(\d+)', tn) for tn in tns]
+        if any([group is None for group in groups]):
+            raise Exception("Bad randoop test name")
+        nums = [(int(group.group(1)), int(group.group(2))) for group in groups]
+        idxs = [class_num * 1000 + method_num for (class_num, method_num) in nums]
+        return idxs
+
+    if suite.startswith('evo'):
+        prefix = 'evo'
+    elif suite == 'dev':
+        prefix = 'dev'
+    else:
+        raise Exception("Bad type of suite {0}".format(suite))
+
+    return items_to_indexes(r, tns, 'tn-i', 'i-tn', [prefix], allow_create=allow_create)
+
+
 def i_tn_s(r, i_s, suite):
     i_s = map(int, i_s) # make sure everything is a number
 
@@ -239,13 +277,17 @@ def i_tn_s(r, i_s, suite):
     else:
         raise Exception("Bad type of suite {0}".format(suite))
 
-    key_rev = 'i-tn:{pre}'.format(pre=prefix)
-    results = []
-    for chunk in chunks(i_s, 100):
-        tns = r.hmget(key_rev, *chunk)
-        assert(len(tns) == len(chunk))
-        results.append(tns)
-    return flatten(results)
+    return indexes_to_items(r, i_s, 'i-tn', [prefix])
+
+
+def tg_i_s(r, tgs, project, version, allow_create=False):
+    return items_to_indexes(r, tgs, 'tg-i', 'i-tg', [project, version], allow_create=allow_create)
+
+
+def i_tg_s(r, i_s, project, version):
+    i_s = map(int, i_s) # make sure everything is a number
+    return indexes_to_items(r, i_s, 'i-tg', [project, version])
+
 
 # helper function for calling from main.py
 def M(r, i_s, tail_key):
