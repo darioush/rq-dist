@@ -123,7 +123,7 @@ def tabulate_tgs(r, rr, work_dir, input):
                         get_files(work_dir / tc_idx, tool, project, version, suite, tc)
                     except NoFileOnS3:
                         exec_result = r.hget(mk_key('exec', [tool] + bundle), tc_idx)
-                        print exec_result
+                        print exec_result, tool
                         is_it_empty = is_empty(tool, json.loads(exec_result))
                         if is_it_empty:
                             if tool == 'major' or tool == 'codecover':
