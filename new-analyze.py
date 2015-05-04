@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 import redis
 import random
 import msgpack
@@ -7,16 +8,18 @@ from collections import defaultdict
 
 from cvgmeasure.conf import get_property, REDIS_URL_TG
 from cvgmeasure.common import mk_key, tg_i_s, tn_i_s, i_tn_s
-from cvgmeasure.d4 import get_tts, get_num_bugs
+from cvgmeasure.d4 import get_tts, get_num_bugs, iter_versions
 from cvgmeasure.consts import ALL_TGS
 
 def connect_db():
     conn = sqlite3.connect('result.db')
     conn.execute("""create table if not exists testselection  (key integer primary key autoincrement, qm string, granularity string, project string, version integer, base string, select_from string, algorithm string, run_id integer, fault_detection integer, determined_by string);""")
+    conn.execute("""create unique index if not exists unindx on testselection (qm, granularity, project, version, base, select_from, algorithm, run_id);""")
     return conn
 
 def save_rows(conn, vals): #qm, granularity, project, version, base, select_from, algorithm, run_id, fault_detection, determined_by):
-    conn.executemany("insert into testselection values (null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", vals)
+    conn.executemany("update testselection set fault_detection=?, determined_by=? where qm=? and granularity=? and project=? and version=? and base=? and select_from=? and algorithm=? and run_id=?", [val[-2:] + val[:-2] for val in vals])
+    conn.executemany("insert or ignore into testselection values (null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ", vals)
     conn.commit()
 #            qm, granularity, project, version, base, select_from, algorithm, run_id, fault_detection, determined_by)
 
@@ -73,57 +76,100 @@ def combinator(f1, f2):
     return combination
 
 
-def run_selection(tg_map, tests, seed=0, initial_tests=[], verbose=False):
-    random.seed(seed)
-
+def run_selection(tg_map, tests, initial_tests=[], verbose=False):
     chosen_tests = list(initial_tests)
-    chosen_tgs = reduce(lambda a, b: a | b, [tg_map[test] for test in chosen_tests], set([]))
+    remaining_tests = set(tests)
+
+    chosen_tgs = set([])
+    for test in initial_tests:
+        chosen_tgs |= tg_map[test]
+        remaining_tests.remove(test)
 
     while True:
-        additional_tg_count_per_test = {test: len(tg_map[test] - chosen_tgs)
-                for test in tests if test not in chosen_tests}
+        max_additional_len = 0
+        max_additional_tests = []
 
-        highest_tg_count_per_test = max(additional_tg_count_per_test.values())
+        empties = []
+        for test in remaining_tests:
+            additional_tgs = tg_map[test] - chosen_tgs
+            if len(additional_tgs) == 0:
+                empties.append(test) # won't ever need to check this test again
+            elif len(additional_tgs) > max_additional_len:
+                max_additional_tests = [test]
+                max_additional_len = len(additional_tgs)
+            elif len(additional_tgs) == max_additional_len:
+                max_additional_tests.append(test)
+
+        highest_tg_count_per_test, choices = max_additional_len, max_additional_tests
         if highest_tg_count_per_test == 0:
             break
 
-        choices = [test for (test, count) in additional_tg_count_per_test.items() if count == highest_tg_count_per_test]
+        for empty in empties:
+            remaining_tests.remove(empty)
+
         choice = random.choice(choices)
         if verbose:
             print len(chosen_tests), choice, len(choices), highest_tg_count_per_test
 
         chosen_tests.append(choice)
         chosen_tgs |= tg_map[choice]
+        remaining_tests.remove(choice)
+
     return chosen_tests
+
+import time
+class Timer(object):
+    def __init__(self):
+        self.time = 0
+        self.st_time = None
+
+    def start(self):
+        self.st_time = time.time()
+
+    def stop(self):
+        self.time += time.time() - self.st_time
+        self.st_time = None
+
+    @property
+    def msec(self):
+        return int(round(1000*self.time))
 
 
 def greedy_minimization(all_tests, tts, tg_map, redundants=lambda tgs, tests: [], essentials=lambda tgs, tests: []):
-        redundant_set = set(redundants(tg_map, all_tests))
-        print "Redundants: ", len(redundant_set)
-        non_redundant_tests = [test for test in all_tests if test not in redundant_set]
-        if all(tt in redundant_set for tt in tts):
-            print "All tts were redundant"
-            return 'R', [0 for i in xrange(0, RUNS)]
-
-        essential_tests = essentials(tg_map, non_redundant_tests)
-        print "Essentials: ", len(essential_tests)
-        essential_tts = [tt for tt in tts if tt in essential_tests]
-        if len(essential_tts) > 0:
-            print "Some tt is essential"
-            return 'E', [1 for i in xrange(0, RUNS)]
-
         results = []
+        tR, tE, tS = Timer(), Timer(), Timer()
         for i in xrange(RUNS):
-            selected = run_selection(tg_map, non_redundant_tests, seed=7*i+13, initial_tests=essential_tests)
-            selected_set = set(selected)
-            selected_tts = tts & selected_set
-            print len(selected_tts),
-            if len(selected_tts) > 0:
-                results.append(1)
-            else:
-                results.append(0)
-        print '...', len([r for r in results if r > 0])
-        return 'S', results
+                seed=7*i+13
+                random.seed(seed)
+                def do_one():
+                    tR.start()
+                    redundant_set = set(redundants(tg_map, all_tests))
+                    non_redundant_tests = [test for test in all_tests if test not in redundant_set]
+                    tR.stop()
+                    if all(tt in redundant_set for tt in tts):
+                        return ('R', 0)
+
+                    tE.start()
+                    essential_tests = essentials(tg_map, non_redundant_tests)
+                    essential_tts = [tt for tt in tts if tt in essential_tests]
+                    tE.stop()
+                    if len(essential_tts) > 0:
+                        return ('E', 1)
+
+                    tS.start()
+                    selected = run_selection(tg_map, non_redundant_tests, initial_tests=essential_tests)
+                    selected_set = set(selected)
+                    selected_tts = tts & selected_set
+                    tS.stop()
+                    if len(selected_tts) > 0:
+                        return ('S',1)
+                    else:
+                        return ('S',0)
+                results.append(do_one())
+                print '{0}{1}'.format(results[-1][0], results[-1][1]),
+        print '...', len([r for _, r in results if r > 0])
+        print tR.msec, tE.msec, tS.msec
+        return  results
 
 def get_unique_goal_tts(tts, all_tests_set, tg_map):
     non_tt_tg_union = set([])
@@ -162,10 +208,14 @@ def minimization(conn, r, rr, qm_name, project, version, suite):
 
     print "Total # of tts: ", len(tts), " of ", len(all_tests)
     print "Reading..."
+    tRead = Timer()
+    tRead.start()
     tg_map = {k: set(msgpack.unpackb(v)) & relevant_tg_set
             for (k, v) in 
             zip(all_tests, 
                 rr.hmget(mk_key('tgs', [project, version, suite]), all_tests))}
+    tRead.stop()
+    print "Reading complete {0} msecs.".format(tRead.msec)
     tts_with_unique_goals = get_unique_goal_tts(tts, all_tests_set, tg_map)
     print "Guaranteed: ", len(tts_with_unique_goals)
 
@@ -185,12 +235,11 @@ def minimization(conn, r, rr, qm_name, project, version, suite):
                 essentials=get_essential_tests))
         ]
         for algo, fun in algos:
-            determined_by, results = fun()
+            results = fun()
             save_rows(conn, [
                 (qm['name'], qm['granularity'], project, version, 'empty', 'dev', algo, run_id+1, result, determined_by)
-                for (run_id, result) in enumerate(results)
+                for (run_id, (determined_by, result)) in enumerate(results)
             ])
-
 
 
 def main():
@@ -199,12 +248,10 @@ def main():
     conn = connect_db()
 
     for qm in ['line', 'branch', 'mutant']:
-        for project in ["Chart"]:
-            for v in xrange(0, 10):
-                version = v + 1
-                print "----( %s %d --  %s )----" % (project, version, qm)
-                minimization(conn, r, rr, qm, project, version, 'dev')
-                print
+        for project, v in iter_versions(restrict_project=["Chart", "Time"], restrict_version=["1-10"]):
+            print "----( %s %d --  %s )----" % (project, v, qm)
+            minimization(conn, r, rr, qm, project, v, 'dev')
+            print
 
 if __name__ == "__main__":
     main()

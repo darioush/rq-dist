@@ -22,9 +22,9 @@ def main():
 
     (options, args) = parser.parse_args(sys.argv)
 
-    TOOLS  = ['cobertura', 'codecover', 'jmockit', 'major']
-    SUITES = ['dev']
-             #['evosuite-strongmutation-fse.{i}'.format(i=i) for i in xrange(21,31)]
+    TOOLS  = ['cobertura',] #'codecover', 'jmockit', 'major']
+    SUITES = ['evosuite-branch-fse.{i}'.format(i=i) for i in xrange(8,9)]
+            #['dev']
              # ['randoop.{i}'.format(i=i) for i in xrange(1,11)] + \
              #   ['evosuite-branch.{i}'.format(i=i) for i in xrange(0,10)]
 

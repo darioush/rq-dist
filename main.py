@@ -16,13 +16,13 @@ def single_run(fun_dotted, json_str, **kwargs):
     my_function = get_fun(fun_dotted)
     my_function(json.loads(json_str))
 
-def single_enqueue(fun_dotted, json_str, queue_name='default', timeout=10000, print_only=False, **kwargs):
+def single_enqueue(fun_dotted, json_str, queue_name='default', timeout=10000, print_only=False, at_front=False, **kwargs):
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
-    doQ(q, fun_dotted, json_str, timeout, print_only)
+    doQ(q, fun_dotted, json_str, timeout, print_only, at_front)
 
 def enqueue_bundles(fun_dotted, json_str, queue_name='default',
         timeout=1800, print_only=False, restrict_project=None, restrict_version=None,
-        tail_keys=[], tail_key_descr=None, **kwargs):
+        tail_keys=[], tail_key_descr=None, at_front=False, **kwargs):
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
     for project, i in iter_versions(restrict_project, restrict_version):
         input = {'project': project, 'version': i}
@@ -35,7 +35,7 @@ def enqueue_bundles(fun_dotted, json_str, queue_name='default',
             tail_keys_to_iterate = [[tk] for tk in tail_keys] # each of the tk's now counts, but singly
         for tail_key in tail_keys_to_iterate:
             input.update({} if tail_key_descr is None else {tail_key_descr: ':'.join(tail_key)})
-            doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
+            doQ(q, fun_dotted, json.dumps(input), timeout, print_only, at_front)
 
 def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
         source_key, tail_keys=[], tail_key_descr=None,
@@ -45,6 +45,7 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
         alternates=None, alternate_key=None,
         check_key=None, filter_function=None, filter_arg=None,
         map_function=None,
+        at_front=False,
         **kwargs):
     if bundle_key is None:
         raise Exception("bundle key not provided [-k]")
@@ -133,7 +134,7 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
                             input[bundle_key] = filtered_list
 
                         input.update({'timeout': timeout})
-                        doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
+                        doQ(q, fun_dotted, json.dumps(input), timeout, print_only, at_front)
                 else:
                     input = {'project': project, 'version': i, bundle_key: bundle}
                     tk_input = {} if tail_key_descr is None else {tail_key_descr: ':'.join(tail_key)}
@@ -141,7 +142,7 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
                     input.update(additionals)
                     input.update(tk_input)
                     input.update({'timeout': timeout})
-                    doQ(q, fun_dotted, json.dumps(input), timeout, print_only)
+                    doQ(q, fun_dotted, json.dumps(input), timeout, print_only, at_front)
 
 if __name__ == "__main__":
 
@@ -149,6 +150,7 @@ if __name__ == "__main__":
 
     parser = OptionParser()
     parser.add_option("-q", "--queue", dest="queue_name", action="store", type="string", default="default")
+    parser.add_option("-f", "--front", dest="at_front", action="store_true", default=False)
     parser.add_option("-j", "--json", dest="json_str", action="store", type="string", default="{}")
     parser.add_option("-t", "--timeout", dest="timeout", action="store", type="int", default=1800)
     parser.add_option("-b", "--bundle-size", dest="bundle_size", action="store", type="int", default=10)
@@ -163,6 +165,7 @@ if __name__ == "__main__":
     parser.add_option("-K", "--alternate-key", dest="alternate_key", action="store", type="string", default=None)
 
     parser.add_option("-T", "--tail-key-alternate", dest="tail_keys", action="append", default=[])
+    parser.add_option("-R", "--tail-key-alternate-range", dest="tail_key_range", action="store", type="string", default=None)
     parser.add_option("-s", "--tail-key", dest="tail_key_descr", action="store", type="string", default=None)
 
     parser.add_option("-Z", "--remove-completed", dest="check_key", action="store", type="string", default=None)
@@ -175,11 +178,20 @@ if __name__ == "__main__":
 
     (options, args) = parser.parse_args(sys.argv[3:])
 
+    if options.tail_keys and options.tail_key_range:
+        rmin, _, rmax = options.tail_key_range.partition('-')
+        rmin, rmax = int(rmin), int(rmax)
+        suites = ['{name}.{id}'.format(name=tk, id=id) for id in xrange(rmin, rmax+1)
+                for tk in options.tail_keys]
+
+        options.tail_keys = suites
+
     funs = {
         'single': single_run,
         'q': single_enqueue,
         'qb': enqueue_bundles,
         'qb-slice': enqueue_bundles_sliced,
+        'qbs': enqueue_bundles_sliced,
     }
 
     funs[cmd](fun_name, **vars(options))

@@ -15,14 +15,15 @@ def get_fun(fun_dotted):
     return getattr(importlib.import_module(module_name), fun_name)
 
 
-def doQ(q, fun_dotted, json_str, timeout, print_only):
+def doQ(q, fun_dotted, json_str, timeout, print_only, at_front=False):
     if print_only:
-        print q.name, '<-', (fun_dotted, (json_str,), timeout)
+        print q.name, '->' if at_front else '<-', (fun_dotted, (json_str,), timeout)
     else:
         return q.enqueue_call(
                 func=fun_dotted,
                 args=(json_str,),
-                timeout=timeout
+                timeout=timeout,
+                at_front=at_front,
         )
 
 

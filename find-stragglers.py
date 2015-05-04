@@ -261,9 +261,12 @@ def main():
                     fails = get_fails(r, tool, project, v, suite, v_idxs)
                     passing = [(v_idx, v_tn) for (v_idx, v_tn) in zip(v_idxs, v_tns) if v_idx not in fails]
                     print len(passing), len(fails)
-                    p_idxs, p_tns = zip(*passing)
-                    cvg_info = check_cvg(r, tool, project, v, suite, p_idxs, p_tns)
-                    print cvg_info
+                    if len(passing) > 0:
+                        p_idxs, p_tns = zip(*passing)
+                        cvg_info = check_cvg(r, tool, project, v, suite, p_idxs, p_tns)
+                        print cvg_info
+                    else:
+                        print "No passing tests."
                     wasOK = True
                 stragglers |= (not wasOK)
 
