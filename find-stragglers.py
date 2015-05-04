@@ -1,4 +1,5 @@
 #! /usr/bin/env python
+import os
 import sys
 import json
 import click
@@ -18,7 +19,7 @@ from cvgmeasure.conf import get_property_defaults, REDIS_URL_RQ
 from cvgmeasure.common import mk_key, i_tn_s, tn_i_s, chunks
 from cvgmeasure.s3 import list_from_s3
 
-BUNDLE_FN='bundlefiles/bundle.out'
+BUNDLE_FN=os.environ.get('BUNDLE_FN', 'bundlefiles/bundle.out')
 EXTRA_OPTS=''
 RESET_BUNDLE_FN=True
 
@@ -104,7 +105,7 @@ def check_test_list(r, project, v, suite):
     return map(int, test_list), test_names
 
 def cobertura_covers(r, project, v, suite, idxes):
-    fail_on_cobertura = set(get_fails(r, 'cobertura', project, v, suite, idxes))
+    fail_on_cobertura = set(get_fails(r, 'cobertura', project, v, suite, idxes, raise_fail_but_not_exec=False))
     return covers(r, 'cobertura', project, v, suite, [idx for idx in idxes if idx not in fail_on_cobertura])
 
 def covers(r, tool, project, v, suite, idxes):
@@ -118,7 +119,7 @@ def covers(r, tool, project, v, suite, idxes):
     return covers
 
 
-def get_fails(r, tool, project, v, suite, idxes):
+def get_fails(r, tool, project, v, suite, idxes, raise_fail_but_not_exec=True):
     check_int(idxes)
     [lookup_key_tool, lookup_key_exec] = [mk_key('fail', [T, project, v, suite]) for T in (tool, 'exec')]
     [failed_tool, failed_exec] = [set(map(int, list(r.smembers(K)))) for K in (lookup_key_tool, lookup_key_exec)]
@@ -138,9 +139,10 @@ def get_fails(r, tool, project, v, suite, idxes):
                         )
             )
 
-        raise Straggler('FAIL_BUT_NOT_EXEC', [tool, project, v, suite], failed_but_not_exec,
-                fix=('cvgmeasure.cvg.run_tests', lambda bundle: bundle[1:], b_pvs)
-            )
+        if raise_fail_but_not_exec:
+            raise Straggler('FAIL_BUT_NOT_EXEC', [tool, project, v, suite], failed_but_not_exec,
+                    fix=('cvgmeasure.cvg.run_tests', lambda bundle: bundle[1:], b_pvs)
+                )
     return failed_idxes
 
 
@@ -246,6 +248,10 @@ def main():
             v_idxs, v_tns = check_test_list(r, project, v, suite)
             suite_tms += len(v_idxs)
             total_tms += len(v_idxs)
+
+            if len(v_idxs) == 0:
+                print ".. passing"
+                continue
 
             for tool_ in tools:
                 tool = ''.join(tool_)

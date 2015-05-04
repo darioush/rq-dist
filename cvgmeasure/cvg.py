@@ -276,15 +276,8 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
             for (tc, tc_idx), progress_callback in worklist:
                 print "{tc} (= {idx})".format(tc=tc, idx=tc_idx)
                 try:
-                    if timeout is None:
-                        results = get_coverage(cvg_tool, tc, generated=generated)
-                    else:
-                        remaining_time = max(int((die_time - datetime.now()).total_seconds() * 1000), 0) + 1000
-                        if individual_timeout is not None:
-                            remaining_time = min(remaining_time, individual_timeout * 1000)
-                        print "Timeout to be set @ {remaining_time}".format(remaining_time=remaining_time)
-                        with add_timeout(remaining_time):
-                            results = get_coverage(cvg_tool, tc, generated=generated)
+                    results = timeout_lift(lambda: get_coverage(cvg_tool, tc, generated=generated),
+                            die_time, individual_timeout)()
 
                     if pass_count_key is not None:
                         inc_key(r, pass_count_key, [project, version, suite], tc_idx) # note the different bundle
@@ -319,6 +312,20 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
                 progress_callback(results)
     return "Success ({empty}/{nonempty}/{fail} ENF)".format(empty=empty, nonempty=nonempty, fail=fail)
 
+
+def timeout_lift(fun, die_time, individual_timeout):
+    if die_time is None:
+        return fun
+    def wrapper():
+        remaining_time = max(int((die_time - datetime.now()).total_seconds() * 1000), 0) + 1000
+        if individual_timeout is not None:
+            remaining_time = min(remaining_time, individual_timeout * 1000)
+        print "Timeout to be set @ {remaining_time}".format(remaining_time=remaining_time)
+        with add_timeout(remaining_time):
+            return fun()
+    return wrapper
+
+
 @job_decorator
 def run_tests(r, work_dir, input):
     project            = input['project']
@@ -330,6 +337,11 @@ def run_tests(r, work_dir, input):
     timeout            = input.get('timeout', 1800)
     individual_timeout = input.get('individual_timeout', None)
     generated          = not (suite == 'dev')
+
+    if timeout:
+        die_time = datetime.now() + timedelta(seconds=timeout)
+    else:
+        die_time = None
 
     with checkout(project, version, work_dir / 'checkout'):
         d4()('compile')
@@ -349,7 +361,9 @@ def run_tests(r, work_dir, input):
             num_runs = passcnt - num_success
             for run in xrange(0, num_runs):
                 print "run {run}/{num_runs} of {tc}".format(run=(run+1), num_runs=num_runs, tc=tc)
-                fails = test(single_test=tc, generated=generated)
+                fails = timeout_lift(lambda: test(single_test=tc, generated=generated),
+                        die_time, individual_timeout)()
+
                 if len(fails) == 0:
                     print "- passed"
                     inc_key(r, 'passcnt', [project, version, suite], tc_idx)
