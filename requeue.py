@@ -21,7 +21,7 @@ class DummyQ(object):
         return "DummyQ"
 
 def _requeue(r, fq, job_id, to_q, timeout=None, change_method=None, update_dict=None, action=False,
-        transform_job=None):
+        transform_job=None, at_front=False):
         """Requeues the job with the given job ID."""
         try:
             job = Job.fetch(job_id, connection=r)
@@ -70,7 +70,7 @@ def _requeue(r, fq, job_id, to_q, timeout=None, change_method=None, update_dict=
                     raise InvalidJobOperationError('Cannot requeue non-failed jobs.')
 
             for (func_name, json_str, timeout) in get_fun(transform_job)(job):
-                doQ(q,  func_name, json_str, timeout, print_only = not action)
+                doQ(q,  func_name, json_str, timeout, print_only = not action, at_front=at_front)
                 print "DONE!"
         else:
             if action:
@@ -83,7 +83,7 @@ def _requeue(r, fq, job_id, to_q, timeout=None, change_method=None, update_dict=
                 job.set_status(JobStatus.QUEUED)
                 job.exc_info = None
 
-                q.enqueue_job(job)
+                q.enqueue_job(job, at_front=at_front)
                 print "DONE!"
 
 def requeue(options, job_list=[]):
@@ -95,7 +95,7 @@ def requeue(options, job_list=[]):
         fq = get_failed_queue(connection=r)
     print fq
     for job in job_list:
-        _requeue(r, fq, job_id=job, to_q=options.to_q, timeout=options.timeout, change_method=options.method, update_dict=options.update_dict, action=options.action, transform_job=options.transform_job)
+        _requeue(r, fq, job_id=job, to_q=options.to_q, timeout=options.timeout, change_method=options.method, update_dict=options.update_dict, action=options.action, transform_job=options.transform_job, at_front=options.at_front)
 
 def list_timeouts(options):
     r = redis.StrictRedis.from_url(REDIS_URL_RQ)
@@ -132,7 +132,7 @@ def list_regexp(options):
 
     def exception_matches(regexp, job):
         exc_info = '' if job.exc_info is None else job.exc_info
-        reason = exc_info.split('\n')[-2:-1]
+        reason = exc_info.split('\n')[:-1]
         for r in reason:
             match = re.search(regexp, r)
             if match:
@@ -166,6 +166,7 @@ if __name__ == "__main__":
     parser.add_option("-m", "--method", dest="method", action="store", default=None)
     parser.add_option("-U", "--update-json", dest="update_dict", action="store", default=None)
     parser.add_option("-T", "--transform-job", dest="transform_job", action="store", default=None)
+    parser.add_option("-f", "--front", dest="at_front", action="store_true", default=False)
 
 
     (options, args) = parser.parse_args(sys.argv[1:])
