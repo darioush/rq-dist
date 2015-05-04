@@ -89,6 +89,11 @@ def map_tgs(r, rr, work_dir, input):
     return "Success (tgs={tgs})".format(tgs=len(tgs))
 
 
+CODECOVER_WHITELIST=set([
+    'org.apache.commons.lang3.StringEscapeUtilsTest::testEscapeHtml',
+    'org.apache.commons.lang3.text.translate.LookupTranslatorTest::testBasicLookup',
+    ])
+
 @job_decorator_tg
 def tabulate_tgs(r, rr, work_dir, input):
     project     = input['project']
@@ -122,15 +127,16 @@ def tabulate_tgs(r, rr, work_dir, input):
                     try:
                         get_files(work_dir / tc_idx, tool, project, version, suite, tc)
                     except NoFileOnS3:
-                        if tool == 'major':
-                            results = json.loads(r.hget(mk_key('exec', ['major'] + bundle), tc_idx))
-                            if is_empty('major', results):
-                                print "-> Empty results for major noticed, ignoring this tool"
-                                call_tgs = [tg for tg in call_tgs if not tg.endswith('major')]
+                        is_it_empty = json.loads(r.hget(mk_key('exec', [tool] + bundle), tc_idx))
+                        if is_it_empty:
+                            if tool == 'major' or (tool == 'codecover' and tc in CODECOVER_WHITELIST):
+                                print "-> Empty results for {0} noticed, ignoring this tool".format(tool)
+                                call_tgs = [tg for tg in call_tgs if not tg.endswith(tool)]
                             else:
                                 raise
                         else:
                             raise
+
 
                 result = jar()[work_dir / tc_idx](*call_tgs)
                 all_tgs = result.strip().split('\n')
