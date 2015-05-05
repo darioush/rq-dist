@@ -429,6 +429,7 @@ def get_triggers(r, work_dir, input):
             other_keys=[],
     ) as done:
         with checkout(project, version, work_dir / 'checkout', buggy_version=True):
+            d4()('compile')
             gen_tool, _, suite_id = suite.partition('.')
             fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
             if fetch_result not in ['ok', 'missing', 'empty']:
