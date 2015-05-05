@@ -453,5 +453,8 @@ def get_triggers(r, work_dir, input):
                     new_fails |= my_new_fails
                 result = sorted(list(new_fails))
                 done(result)
-            return "Success: triggers={0}".format(len(result))
+                return "Success: triggers={0}".format(len(result))
+            else:
+                return "Success: fetch result was:{0}".format(fetch_result)
+
 
