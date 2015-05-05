@@ -436,7 +436,11 @@ def get_triggers(r, work_dir, input):
                 raise Exception('Unexpected return value from d4 fetch-generated-tests: {response}'.format(
                     response=fetch_result))
             if fetch_result == 'ok':
-                d4()('compile', '-g')
+                try:
+                    d4()('compile', '-g')
+                except:
+                    done([])
+                    return "Success: Does not compile"
                 test_methods = d4()('list-tests', '-g').rstrip().split('\n')
                 print "Got methods"
 
@@ -456,6 +460,7 @@ def get_triggers(r, work_dir, input):
                 done(result)
                 return "Success: triggers={0}".format(len(result))
             else:
+                done([])
                 return "Success: fetch result was:{0}".format(fetch_result)
 
 
