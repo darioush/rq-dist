@@ -112,46 +112,55 @@ def tabulate_tgs(r, rr, work_dir, input):
         total = {'t': 0, 'c': 0, 'b': 0}
         count = 0
         for (tc, tc_idx), progress_callback in worklist:
-            with refresh_dir(work_dir / tc_idx, cleanup=True):
-                print tc_idx, tc
-                map_file_name = '{project}:{version}'.format(project=project, version=version)
-                get_file_from_cache_or_s3('darioush-map-files', map_file_name, str(work_dir / tc_idx / 'map.txt'))
-                # - prep the tmp dir
-                call_tgs = ALL_TGS
-                for tool in ['cobertura', 'codecover', 'jmockit', 'major']:
-                    try:
-                        get_files(work_dir / tc_idx, tool, project, version, suite, tc)
-                    except NoFileOnS3:
-                        exec_result = r.hget(mk_key('exec', [tool] + bundle), tc_idx)
-                        print exec_result, tool
-                        is_it_empty = is_empty(tool, json.loads(exec_result))
-                        if is_it_empty:
-                            if tool == 'major' or tool == 'codecover':
-                                print "-> Empty results for {0} noticed, ignoring this tool".format(tool)
-                                call_tgs = [tg for tg in call_tgs if not tg.endswith(tool)]
+            def handle_single():
+                with refresh_dir(work_dir / tc_idx, cleanup=True):
+                    print tc_idx, tc
+
+                    map_file_name = '{project}:{version}'.format(project=project, version=version)
+                    get_file_from_cache_or_s3('darioush-map-files', map_file_name, str(work_dir / tc_idx / 'map.txt'))
+                    # - prep the tmp dir
+                    call_tgs = ALL_TGS
+                    for tool in ['cobertura', 'codecover', 'jmockit', 'major']:
+                        try:
+                            get_files(work_dir / tc_idx, tool, project, version, suite, tc)
+                        except NoFileOnS3:
+                            exec_result = json.loads(r.hget(mk_key('exec', [tool] + bundle), tc_idx))
+                            print exec_result, tool
+                            if exec_result is None:
+                                has_failed = r.sismember(mk_key('fail', ['exec'] + bundle), tc_idx)
+                                if has_failed:
+                                    print "-- Has failed"
+                                    return [], []
+                            is_it_empty = is_empty(tool, exec_result)
+                            if is_it_empty:
+                                if tool == 'major' or tool == 'codecover':
+                                    print "-> Empty results for {0} noticed, ignoring this tool".format(tool)
+                                    call_tgs = [tg for tg in call_tgs if not tg.endswith(tool)]
+                                else:
+                                    raise
                             else:
                                 raise
-                        else:
-                            raise
 
+                    result = jar()[work_dir / tc_idx](*call_tgs)
+                    all_tgs = result.strip().split('\n')
+                    tgs = [tg for covered, _, tg in [s.partition(' ') for s in all_tgs] if covered == '+']
 
-                result = jar()[work_dir / tc_idx](*call_tgs)
-                all_tgs = result.strip().split('\n')
-                tgs = [tg for covered, _, tg in [s.partition(' ') for s in all_tgs] if covered == '+']
+                    return all_tgs, tgs
 
-                # bandaid
-                tgs_jmockit = [tg for tg in tgs if tg.find('jmockit') != -1]
-                tg_i_s(rr, tgs_jmockit, project, version, allow_create=True)
-                # end bandaid
+            all_tgs, tgs = handle_single()
+            # bandaid
+            tgs_jmockit = [tg for tg in tgs if tg.find('jmockit') != -1]
+            tg_i_s(rr, tgs_jmockit, project, version, allow_create=True)
+            # end bandaid
 
-                tg_idxs = tg_i_s(rr, tgs, project, version, allow_create=False)
-                assert len(tg_idxs) == len(tgs)
-                result = msgpack.packb(tg_idxs, use_bin_type=True)
-                results_readable = {'t': len(all_tgs), 'c': len(tgs), 'b': len(result)}
-                for key in total:
-                    total[key] += results_readable[key]
-                count += 1
-                print '{r[c]}/{r[t]} packed: {r[b]}'.format(r=results_readable)
-                progress_callback(result)
+            tg_idxs = tg_i_s(rr, tgs, project, version, allow_create=False)
+            assert len(tg_idxs) == len(tgs)
+            result = msgpack.packb(tg_idxs, use_bin_type=True)
+            results_readable = {'t': len(all_tgs), 'c': len(tgs), 'b': len(result)}
+            for key in total:
+                total[key] += results_readable[key]
+            count += 1
+            print '{r[c]}/{r[t]} packed: {r[b]}'.format(r=results_readable)
+            progress_callback(result)
     return "Success ({r[c]}/{r[t]} packed: {r[b]} totals, count={count})".format(r=total, count=count)
 

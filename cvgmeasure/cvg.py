@@ -276,7 +276,7 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
             for (tc, tc_idx), progress_callback in worklist:
                 print "{tc} (= {idx})".format(tc=tc, idx=tc_idx)
                 try:
-                    results = timeout_lift(lambda: get_coverage(cvg_tool, tc, generated=generated),
+                    results = timeout_lift(lambda cvg_tool=cvg_tool, tc=tc, generated=generated: get_coverage(cvg_tool, tc, generated=generated),
                             die_time, individual_timeout)()
 
                     if pass_count_key is not None:
@@ -361,7 +361,7 @@ def run_tests(r, work_dir, input):
             num_runs = passcnt - num_success
             for run in xrange(0, num_runs):
                 print "run {run}/{num_runs} of {tc}".format(run=(run+1), num_runs=num_runs, tc=tc)
-                fails = timeout_lift(lambda: test(single_test=tc, generated=generated),
+                fails = timeout_lift(lambda tc=tc, generated=generated: test(single_test=tc, generated=generated),
                         die_time, individual_timeout)()
 
                 if len(fails) == 0:
