@@ -412,3 +412,46 @@ def test_lists_gen(r, work_dir, input):
 
     return "Success (fetch={0})".format(fetch_result)
 
+
+@job_decorator
+def get_triggers(r, work_dir, input):
+    project   = input['project']
+    version   = input['version']
+    suite     = input['suite']
+    redo      = input.get('redo', False)
+    generated = not (suite == 'dev')
+
+    with check_key(
+            r,
+            'trigger',
+            [project, version, suite],
+            redo=redo,
+            other_keys=[],
+    ) as done:
+        with checkout(project, version, work_dir / 'checkout', buggy_version=True):
+            gen_tool, _, suite_id = suite.partition('.')
+            fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
+            if fetch_result not in ['ok', 'missing', 'empty']:
+                raise Exception('Unexpected return value from d4 fetch-generated-tests: {response}'.format(
+                    response=fetch_result))
+            if fetch_result == 'ok':
+                d4()('compile', '-g')
+                test_methods = d4()('list-tests', '-g').rstrip().split('\n')
+                print "Got methods"
+
+                test_classes = set([tm.partition('::')[0] for tm in test_methods])
+                fails_on_v2 = set(int(x) for x in r.smembers(mk_key('fail', ['exec', project, version, suite])))
+                new_fails = set([])
+                for test_class in test_classes:
+                    print test_class
+                    failed_methods = test(single_test=test_class, generated=generated)
+                    failed_method_indexes = tn_i_s(r, failed_methods, suite, allow_create=False)
+                    assert len(failed_method_indexes) == len(failed_methods)
+
+                    my_new_fails = set(failed_method_indexes) - fails_on_v2
+                    print "Fails: {0} new / {1} total".format(len(my_new_fails), len(failed_methods))
+                    new_fails |= my_new_fails
+                result = sorted(list(new_fails))
+                done(result)
+            return "Success: triggers={0}".format(len(result))
+

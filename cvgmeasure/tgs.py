@@ -65,15 +65,18 @@ def map_tgs(r, rr, work_dir, input):
         get_file_from_cache_or_s3('darioush-map-files', map_file_name, str(work_dir / 'map.txt'))
         for tool in ['cobertura', 'codecover', 'jmockit', 'major']:
             # - get a test name
-            test_list = r.hkeys(mk_key('nonempty', [tool, project, version, 'dev']))[:1]
-            if tool != 'major':
-                assert len(test_list) == 1
+            for suite_type in ['dev', 'randoop.1', 'evosuite-strongmutation-fse.5']:
+                test_list = r.hkeys(mk_key('nonempty', [tool, project, version, suite_type])) [:1]
+                if tool != 'major':
+                    assert len(test_list) == 1
+                if len(test_list) == 1:
+                    break
 
             if test_list:
-                [test_name,] = i_tn_s(r, test_list, 'dev')
+                [test_name,] = i_tn_s(r, test_list, suite_type)
                 print tool, test_name
                 # - prep the tmp dir
-                get_files(work_dir, tool, project, version, 'dev', test_name)
+                get_files(work_dir, tool, project, version, suite_type, test_name)
 
         # - invoke java
         if tool == 'major' and len(test_list) == 0:

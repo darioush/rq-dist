@@ -14,7 +14,7 @@ from cvgmeasure.conf import REDIS_URL_RQ
 from cvgmeasure.common import doQ, get_fun
 
 class DummyQ(object):
-    def enqueue_job(self, job):
+    def enqueue_job(self, job, at_front=False):
         print "DummyQ not enqueuing:", job.id
 
     def __str__(self):
@@ -161,7 +161,7 @@ if __name__ == "__main__":
     parser.add_option("-x", "--commit", dest="action", action="store_true", default=False)
     parser.add_option("-l", "--list-timeouts", dest="list", action="store_true", default=False)
     parser.add_option("-N", "--list-nones", dest="list_nones", action="store_true", default=False)
-    parser.add_option("-g", "--list-regexp", dest="regexp", action="store", default=[])
+    parser.add_option("-g", "--list-regexp", dest="regexp", action="append", default=[])
     parser.add_option("-G", "--descr-regexp", dest="descr_regexp", action="append", default=[])
     parser.add_option("-m", "--method", dest="method", action="store", default=None)
     parser.add_option("-U", "--update-json", dest="update_dict", action="store", default=None)

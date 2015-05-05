@@ -43,8 +43,11 @@ def d4():
     return local['defects4j']
 
 @contextmanager
-def checkout(project, version, to):
-    d4()('checkout', '-p', project, '-v', "%df" % version, '-w', to)
+def checkout(project, version, to, buggy_version=False):
+    if buggy_version:
+        d4()('checkout', '-p', project, '-v', "%db" % version, '-w', to)
+    else:
+        d4()('checkout', '-p', project, '-v', "%df" % version, '-w', to)
     with local.cwd(to):
         yield
 
