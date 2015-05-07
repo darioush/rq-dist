@@ -5,6 +5,8 @@ import msgpack
 import sqlite3
 
 from collections import defaultdict
+from optparse import OptionParser
+import sys
 
 from cvgmeasure.conf import get_property, REDIS_URL_TG
 from cvgmeasure.common import mk_key, tg_i_s, tn_i_s, i_tn_s
@@ -183,11 +185,10 @@ def get_unique_goal_tts(tts, all_tests_set, tg_map):
     tts_with_unique_goals = [tt for tt in tts if len(get_unique_goals(tt)) > 0]
     return tts_with_unique_goals
 
-QMS = {
-        'line': {'name': 'line', 'granularity': 'file', 'fun': lambda s: s.startswith('line:')},
-        'branch': {'name': 'branch', 'granularity': 'file', 'fun': lambda s: s.startswith('branch:') or s.startswith('line:')},
-        'mutant': {'name': 'mutant', 'granularity': 'file', 'fun': lambda s: s.startswith('mutant:') or s.startswith('line:')},
-    }
+
+def def_me(s):
+    return {'name': s, 'granularity': 'file', 'fun': lambda s: s.startswith(s)}
+
 
 def minimization(conn, r, rr, qm_name, project, version, suite):
     qm = QMS[qm_name]
@@ -242,17 +243,49 @@ def minimization(conn, r, rr, qm_name, project, version, suite):
             ])
 
 
-def main():
+QMS = {
+        'line': def_me('line'),
+        'line:cobertura': def_me('branch:cobertura'),
+        'line:codecover': def_me('branch:codecover'),
+        'line:jmockit': def_me('line:jmockit'),
+
+        'branch': def_me('branch'),
+        'branch:cobertura': def_me('branch:cobertura'),
+        'branch:codecover': def_me('branch:codecover'),
+        'branch:jmockit': def_me('branch:jmockit'),
+
+        'branch-line': {'name': 'branch-line', 'granularity': 'file', 'fun': lambda s: s.startswith('branch:') or s.startswith('line:')},
+
+        'statement-line': {'name': 'statement-line', 'granularity': 'file', 'fun': lambda s: s.startswith('statement:') or s.startswith('line')},
+        'statement:codecover': def_me('statement:codecover'),
+
+        'data': {'name': 'data', 'granularity': 'file', 'fun': lambda s: s.startswith('data:')},
+
+        'branch-loop-line': {'name': 'branch-loop', 'granularity': 'file', 'fun': lambda s: s.startswith('branch:') or s.startswith('loop:') or s.startswith('line:')},
+        'branch-loop-path-line': {'name': 'branch-loop-path', 'granularity': 'file', 'fun': lambda s: s.startswith('branch:') or s.startswith('loop:') or s.startswith('path:') or s.startswith('line:')},
+
+        'mutcvg': {'name': 'mutcvg', 'granularity': 'file', 'fun': lambda s: s.startswith('mutcvg:')},
+        'mutcvg-line': {'name': 'mutcvg', 'granularity': 'file', 'fun': lambda s: s.startswith('mutcvg:') or s.startswith('line:')},
+        'mutant': {'name': 'mutant', 'granularity': 'file', 'fun': lambda s: s.startswith('mutant:')},
+        'mutant-line': {'name': 'mutant-line', 'granularity': 'file', 'fun': lambda s: s.startswith('mutant:') or s.startswith('line:')},
+    }
+
+def main(options):
+
     r = redis.StrictRedis.from_url(get_property('redis_url'))
     rr = redis.StrictRedis.from_url(REDIS_URL_TG)
     conn = connect_db()
 
-    for qm in ['line', 'branch', 'mutant']:
-        for project, v in iter_versions(restrict_project=["Chart", "Time"], restrict_version=["1-10"]):
+    for qm in sorted(QMS.keys()):
+        for project, v in iter_versions(restrict_project=options.restrict_project, restrict_version=options.restrict_version):
             print "----( %s %d --  %s )----" % (project, v, qm)
             minimization(conn, r, rr, qm, project, v, 'dev')
             print
 
 if __name__ == "__main__":
-    main()
+    parser = OptionParser()
+    parser.add_option("-p", "--project", dest="restrict_project", action="append", default=[])
+    parser.add_option("-v", "--version", dest="restrict_version", action="append", default=[])
+    (options, args) = parser.parse_args(sys.argv)
+    main(options)
 
