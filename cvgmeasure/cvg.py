@@ -3,6 +3,7 @@ import json
 import socket
 import traceback
 import tarfile
+import msgpack
 
 from contextlib import contextmanager
 from plumbum import local
@@ -10,6 +11,7 @@ from plumbum.cmd import rm, mkdir, ls
 from redis import StrictRedis
 from cStringIO import StringIO
 from datetime import datetime, timedelta
+from itertools import groupby
 
 from cvgmeasure.common import job_decorator
 from cvgmeasure.common import check_key, filter_key_list, mk_key
@@ -326,8 +328,113 @@ def timeout_lift(fun, die_time, individual_timeout):
     return wrapper
 
 
+from cvgmeasure.d4 import get_pass_count, get_timing, enable_timing
+
+@job_decorator
+def time_tests(r, work_dir, input):
+    project            = input['project']
+    version            = input['version']
+    suite              = input['suite']
+    tests              = input['tests']
+    redo               = input.get('redo', False)
+    delete             = input.get('delete', False)
+    timeout            = input.get('timeout', 1800)
+    individual_timeout = input.get('individual_timeout', None)
+    generated          = not (suite == 'dev')
+    check_key='time'
+
+    bundle = [project, version, suite]
+    def get_class_name(method):
+        return method.partition('::')[0]
+    def get_method_name(method):
+        return method.partition('::')[2]
+
+    tests = sorted(tests, key=get_class_name)
+    with filter_key_list(
+            r,
+            key=check_key,
+            bundle=bundle,
+            list=tests,
+            redo=redo, delete=delete,
+            other_keys=[],
+            worklist_map=lambda tns: tn_i_s(r, tns, suite)
+    ) as worklist:
+        if timeout:
+            die_time = datetime.now() + timedelta(seconds=timeout)
+        else:
+            die_time = None
+
+        with cache_or_checkout_and_coverage_setup_and_reset(
+               project,
+                version,
+                'compile-cache',
+                ['jmockit', project, version], suite,
+                work_dir / 'checkout',
+                exception_on_cache_miss=True,
+        ):
+        #with checkout(project, version, work_dir / 'checkout'):
+            # step 0: compile + get gen tests + recompile if needed
+            #d4()('compile')
+
+            #if generated:
+            #    gen_tool, _, suite_id = suite.partition('.')
+            #    fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
+            #    if fetch_result != "ok":
+            #        raise Exception('Unexpected return value from d4 fetch-generated-tests')
+            #    d4()('compile', '-g')
+            # step 1: group your worklist by testclass
+            grouped_worklist = groupby(worklist, key=lambda ((tc, x), y): get_class_name(tc))
+            for test_class, items_iter in grouped_worklist:
+                items = list(items_iter)
+                full_names =  [tc for (tc, tc_idx), pc in items]
+                method_idxs = [tc_idx for (tc, tc_idx), pc in items]
+                method_names = [get_method_name(tc) for tc in full_names]
+                running_single_test = '{0}::{1}'.format(test_class,
+                        ','.join(method_names)
+                    )
+                print running_single_test
+                with enable_timing():
+                    fails = timeout_lift(lambda single_test=running_single_test,
+                            generated=generated: test(single_test=single_test, generated=generated),
+                            die_time, individual_timeout)()
+
+                if len(fails) > 0:
+                    raise Exception('{0} unexpected fails!'.format(', '.join(fails)))
+
+                print "- passed"
+                passed_cnt = get_pass_count()
+                if len(method_names) != passed_cnt:
+                    raise Exception('{0} not equals to {1} for length of passed tests'.format(
+                        len(method_names), passed_cnt))
+                timing_dict = get_timing()
+                method_times = [timing_dict[tc]['ET'] - timing_dict[tc]['ST'] for tc in full_names]
+                cl_setup = timing_dict[full_names[0]]['ST'] - timing_dict[test_class]['SS']
+                cl_teardown = timing_dict[test_class]['ES'] - timing_dict[full_names[-1]]['ET']
+                print 'Class setup/td: {0}/{1}'.format(cl_setup, cl_teardown)
+
+                if generated:
+                    idxs = method_idxs
+                    times = method_times
+                else:
+                    class_idx = tn_i_s(r, [test_class], suite, allow_create=False)[0]
+                    class_time = cl_setup + cl_teardown
+                    idxs = [class_idx] + method_idxs
+                    times = [class_time] + method_times
+
+                current_times = [msgpack.unpackb(val) if val is not None else [] for
+                        val in r.hmget(mk_key('time', bundle), idxs)]
+                new_times = [[time] + current_time for (time, current_time)
+                    in zip(times, current_times)]
+                print new_times
+                r.hmset(mk_key('time', bundle), {idx: msgpack.packb(new_time, use_bin_type=True)
+                    for (idx, new_time) in zip(idxs, new_times)})
+
+
 @job_decorator
 def run_tests(r, work_dir, input):
+    return handle_run_tests(r, work_dir, input)
+
+def handle_run_tests(r, work_dir, input):
     project            = input['project']
     version            = input['version']
     suite              = input['suite']
@@ -357,6 +464,7 @@ def run_tests(r, work_dir, input):
         for counter, (tc, tc_idx) in enumerate(zip(tests, tn_i_s(r, tests, suite))):
             print "{tc} (= {idx}) ({counter}/{total})".format(tc=tc, idx=tc_idx,
                     counter=counter + 1, total=len(tests))
+            # kind of an OK bug here....
             num_success = int(get_key(r, 'passcnt', [project, version, suite], tc, default=0))
             num_runs = passcnt - num_success
             for run in xrange(0, num_runs):
@@ -447,8 +555,8 @@ def get_triggers(r, work_dir, input):
                 test_classes = set([tm.partition('::')[0] for tm in test_methods])
                 fails_on_v2 = set(int(x) for x in r.smembers(mk_key('fail', ['exec', project, version, suite])))
                 new_fails = set([])
-                for test_class in test_classes:
-                    print test_class
+                for idx, test_class in enumerate(test_classes):
+                    print "{0}/{1} {2}".format(idx, len(test_classes), test_class)
                     failed_methods = test(single_test=test_class, generated=generated)
                     failed_method_indexes = tn_i_s(r, failed_methods, suite, allow_create=False)
                     assert len(failed_method_indexes) == len(failed_methods)

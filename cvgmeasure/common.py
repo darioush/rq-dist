@@ -139,7 +139,7 @@ def check_key(r, key, bundle, redo=False, other_keys=[], split_at=-1):
                 r.delete(mk_key(key, bundle))
         else:
             raise DuplicateBundleAttempt("Results already computed for %s %s" % (_key, _bundle))
-    def complete(result=1):
+    def complete(result='1'):
         r.hset(_key, _bundle, _json_if_needed(result))
     yield complete
 
@@ -150,7 +150,7 @@ class DuplicateBundleAttempt(Exception):
 
 ## New schema
 @contextmanager
-def filter_key_list(r, key, bundle, list, redo=False, other_keys=[], worklist_map=lambda x: x):
+def filter_key_list(r, key, bundle, list, redo=False, delete=True, other_keys=[], worklist_map=lambda x: x):
     _key = mk_key(key, bundle)
 
     list_pairs = zip(list, worklist_map(list))
@@ -160,7 +160,7 @@ def filter_key_list(r, key, bundle, list, redo=False, other_keys=[], worklist_ma
     already_computed_list = [(item, idx) for (item, idx) in list_pairs if idx in already_computed]
     for (item, idx) in already_computed_list:
         print "Results already computed for {0} {1} (= {2})".format(_key, item, idx)
-        if redo:
+        if redo and delete:
             r.hdel(_key, idx)
             for key in other_keys:
                 r.hdel(mk_key(key, bundle), idx)
@@ -320,4 +320,11 @@ def downsize10(j):
 
 def downsize1(j):
     return downsize(j, down_to=1)
+
+def FF(r, project, i, tail_key, filter_arg, bundle):
+    filtered = bundle
+    for suite in tail_key:
+        fails = r.smembers(mk_key('fail', ['exec', project, i, suite]))
+        filtered = [item for item in filtered if item not in fails]
+    return filtered
 

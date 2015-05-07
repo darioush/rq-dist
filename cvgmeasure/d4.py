@@ -1,5 +1,7 @@
 import re
 
+from collections import defaultdict
+
 from contextlib import contextmanager
 from plumbum import local
 from plumbum.cmd import rm, mkdir, ls
@@ -29,15 +31,27 @@ def add_to_path(l):
         local.env.path.pop()
 
 @contextmanager
-def add_timeout(timeout):
-    TIMEOUT_KEY = 'D4J_TEST_TIMEOUT'
-    prev_val = local.env.get(TIMEOUT_KEY, None)
-    local.env[TIMEOUT_KEY] = timeout
+def add_env_var(key, val):
+    prev_val = local.env.get(key, None)
+    local.env[key] = val
     yield
     if prev_val is None:
-        del local.env[TIMEOUT_KEY]
+        del local.env[key]
     else:
-        local.env[TIMEOUT_KEY] = prev_val
+        local.env[key] = prev_val
+
+
+@contextmanager
+def add_timeout(timeout):
+    with add_env_var('D4J_TEST_TIMEOUT', timeout):
+        yield
+
+
+@contextmanager
+def enable_timing(fn='timing.txt'):
+    with add_env_var('D4J_TIMING_FILE', fn):
+        yield
+
 
 def d4():
     return local['defects4j']
@@ -174,6 +188,26 @@ def test(extra_args=[], generated=False, single_test=None):
     failed_tests_cnt = non_none_count_matches[0]
     assert len(failed_tests) == failed_tests_cnt
     return failed_tests
+
+def get_pass_count(fn='count-of-tests.txt'):
+    with open(fn) as f:
+        lines = [line for line in f]
+    return int(line[:-1])
+
+def get_timing(fn='timing.txt'):
+    with open(fn) as f:
+        def info(line):
+            timestamp, _, event = line.partition(' ')
+            return int(timestamp), event
+        events = [info(line.rstrip()) for line in f]
+        init_time, init_str = events[0]
+        print init_str
+        assert init_str == 'INIT'
+        timing_dict = defaultdict(dict)
+        for timestamp, event in events[1:]:
+            kind, _, id = event.partition(' ')
+            timing_dict[id][kind] = timestamp
+        return dict(timing_dict)
 
 def get_modified_sources(project, version):
     lines = d4()('info', '-p', project, '-v', str(version), '-m').rstrip().split('\n')
