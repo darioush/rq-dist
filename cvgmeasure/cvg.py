@@ -419,7 +419,8 @@ def time_tests(r, work_dir, input):
                         print fail
                         _fails, _run_cnt, _method_times, _cl_setup, _cl_teardown = run_with_timing(fail, [fail])
                         if len(_fails) > 0:
-                            raise Exception('{0} fails even by itself...'.format(fail))
+                            _method_times = [-1]
+                            print '{0} fails even by itself...'.format(fail)
                         assert _run_cnt == 1
                         assert len(_method_times) == 1
                         cl_setups.append(_cl_setup)
