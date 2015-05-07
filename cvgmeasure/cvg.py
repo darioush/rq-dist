@@ -19,7 +19,7 @@ from cvgmeasure.common import tn_i_s
 from cvgmeasure.common import put_list, put_into_hash, put_key
 from cvgmeasure.common import get_key, inc_key, put_into_set, del_from_set
 from cvgmeasure.conf import get_property
-from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage
+from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage, get_tts
 from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_file, add_to_path, compile_if_needed, add_timeout
 from cvgmeasure.d4 import is_empty, denominator_empty, CoverageCalculationException
 from cvgmeasure.s3 import put_into_s3, get_compiled_from_s3, NoFileOnS3
@@ -399,6 +399,7 @@ def time_tests(r, work_dir, input):
                                 generated=generated: test(single_test=single_test, generated=generated),
                                 die_time, individual_timeout)()
                     timing_dict = get_timing()
+                    print timing_dict
                     run_cnt = get_pass_count()
                     method_times = [timing_dict[tc]['ET'] - timing_dict[tc]['ST'] for tc in full_names]
                     cl_setup = timing_dict[full_names[0]]['ST'] - timing_dict[test_class]['SS']
@@ -426,7 +427,6 @@ def time_tests(r, work_dir, input):
                         cl_setups.append(_cl_setup)
                         cl_teardowns.append(_cl_teardown)
                         fail_overrides[get_method_name(fail)] = _method_times[0]
-
 
 
                 print "- passed"
@@ -547,7 +547,13 @@ def get_triggers(r, work_dir, input):
     version   = input['version']
     suite     = input['suite']
     redo      = input.get('redo', False)
+    verify    = input.get('verify', 5)
+    timeout            = input.get('timeout', 1800)
+    individual_timeout = input.get('individual_timeout', None)
     generated = not (suite == 'dev')
+
+    if timeout:
+        die_time = datetime.now() + timedelta(seconds=timeout)
 
     with check_key(
             r,
@@ -556,6 +562,12 @@ def get_triggers(r, work_dir, input):
             redo=redo,
             other_keys=[],
     ) as done:
+        if not generated:
+            d4_tts = get_tts(project, version)
+            result = sorted(tn_i_s(r, list(d4_tts), suite, allow_create=False))
+            done(result)
+            return "Success, from d4, {0} tts".format(len(result))
+
         with checkout(project, version, work_dir / 'checkout', buggy_version=True):
             d4()('compile')
             gen_tool, _, suite_id = suite.partition('.')
@@ -577,13 +589,23 @@ def get_triggers(r, work_dir, input):
                 new_fails = set([])
                 for idx, test_class in enumerate(test_classes):
                     print "{0}/{1} {2}".format(idx, len(test_classes), test_class)
-                    failed_methods = test(single_test=test_class, generated=generated)
+                    failed_methods = timeout_lift(lambda test_class=test_class, generated=generated: test(single_test=test_class, generated=generated), die_time, individual_timeout)()
                     failed_method_indexes = tn_i_s(r, failed_methods, suite, allow_create=False)
                     assert len(failed_method_indexes) == len(failed_methods)
+                    failed_method_map = dict(zip(failed_method_indexes, failed_methods))
+                    failed_method_map_rev = dict(zip(failed_methods, failed_method_indexes))
 
                     my_new_fails = set(failed_method_indexes) - fails_on_v2
                     print "Fails: {0} new / {1} total".format(len(my_new_fails), len(failed_methods))
-                    new_fails |= my_new_fails
+                    def check_independence(ft):
+                        print "Verifying {0}".format(ft)
+                        fails = timeout_lift(lambda ft=ft, generated=generated: test(single_test=ft, generated=generated), die_time, individual_timeout)()
+                        return fails == [ft]
+                    verified_fails = [failed_method_map_rev[ft] for ft in
+                            [failed_method_map[ft_i] for ft_i in my_new_fails] if
+                            all(check_independence(ft) for _ in xrange(0,verify))]
+                    print "Verified: {0}".format(len(verified_fails))
+                    new_fails |= set(verified_fails)
                 result = sorted(list(new_fails))
                 done(result)
                 return "Success: triggers={0}".format(len(result))

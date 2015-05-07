@@ -49,6 +49,8 @@ def add_timeout(timeout):
 
 @contextmanager
 def enable_timing(fn='timing.txt'):
+    with open(fn, 'w') as f:
+        pass
     with add_env_var('D4J_TIMING_FILE', fn):
         yield
 
@@ -201,7 +203,7 @@ def get_timing(fn='timing.txt'):
             return int(timestamp), event
         events = [info(line.rstrip()) for line in f]
         init_time, init_str = events[0]
-        print init_str
+        assert init_str == 'INIT'
         timing_dict = defaultdict(dict)
         for timestamp, event in events[1:]:
             kind, _, id = event.partition(' ')
