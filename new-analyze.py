@@ -222,10 +222,6 @@ def get_unique_goal_tts(tts, all_tests_set, tg_map):
     return tts_with_unique_goals
 
 
-def def_me(s):
-    return {'name': s, 'granularity': 'file', 'fun': lambda x: x.startswith(s)}
-
-
 def get_triggers_from_results(r, project, version, suite):
     result = json.loads(r.hget(mk_key('trigger', [project, version]), suite))
     return set(result)
@@ -428,33 +424,26 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
                         for (run_id, (determined_by, result, time, count)) in enumerate(results)}
         )
 
+def def_me(s):
+    possible_tgs = s.split('-')
+    return {'name': s, 'granularity': 'file', 'fun': lambda x: any(x.startswith(possibiliy) for possibility in possible_tgs)}
 
-QMS = {
-        'line': def_me('line'),
-        'line:cobertura': def_me('line:cobertura'),
-        'line:codecover': def_me('line:codecover'),
-        'line:jmockit': def_me('line:jmockit'),
-
-        'branch': def_me('branch'),
-        'branch:cobertura': def_me('branch:cobertura'),
-        'branch:codecover': def_me('branch:codecover'),
-        'branch:jmockit': def_me('branch:jmockit'),
-
-        'branch-line': {'name': 'branch-line', 'granularity': 'file', 'fun': lambda s: s.startswith('branch:') or s.startswith('line:')},
-
-        'statement-line': {'name': 'statement-line', 'granularity': 'file', 'fun': lambda s: s.startswith('statement:') or s.startswith('line')},
-        'statement:codecover': def_me('statement:codecover'),
-
-        'data': {'name': 'data', 'granularity': 'file', 'fun': lambda s: s.startswith('data:')},
-
-        'branch-loop-line': {'name': 'branch-loop', 'granularity': 'file', 'fun': lambda s: s.startswith('branch:') or s.startswith('loop:') or s.startswith('line:')},
-        'branch-loop-path-line': {'name': 'branch-loop-path', 'granularity': 'file', 'fun': lambda s: s.startswith('branch:') or s.startswith('loop:') or s.startswith('path:') or s.startswith('line:')},
-
-        'mutcvg': {'name': 'mutcvg', 'granularity': 'file', 'fun': lambda s: s.startswith('mutcvg:')},
-        'mutcvg-line': {'name': 'mutcvg', 'granularity': 'file', 'fun': lambda s: s.startswith('mutcvg:') or s.startswith('line:')},
-        'mutant': {'name': 'mutant', 'granularity': 'file', 'fun': lambda s: s.startswith('mutant:')},
-        'mutant-line': {'name': 'mutant-line', 'granularity': 'file', 'fun': lambda s: s.startswith('mutant:') or s.startswith('line:')},
-    }
+QMS = { s: def_me(s) for s in [
+    'line',
+    'line:cobertura', 'line:codecover', 'line:jmockit',
+    'branch',
+    'branch:cobertura', 'branch:codecover', 'branch:jmockit',
+    'branch-line',
+    'statement-line',
+    'statement:codecover',
+    'data',
+    'branch-loop-line',
+    'branch-loop-path-line',
+    'mutcvg',
+    'mutcvg-line',
+    'mutant',
+    'mutant-line',
+]}
 
 def main(options):
     r = redis.StrictRedis.from_url(get_property('redis_url'))
