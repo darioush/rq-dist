@@ -19,16 +19,14 @@ from cvgmeasure.consts import ALL_TGS
 def connect_db():
     return redis.StrictRedis.from_url(REDIS_URL_OUT)
 
-def save_rows(r_out, qm, granularity, project, version, bases, pools, vals):
 
-    # vals should be a dict from {'GRE:1': (fault_detection, determined_by, # selected, # pool, # base, runtime, pool_time, base_time,
-    # )}'
+def save_row_independent(r_out, key, val):
+    r_out.set(key + ':info', json.dumps(val))
 
+def save_rows(r_out, key, vals):
     # redis key -> out:qm:granularity:project:version:base:pool
     # parts of the hash: algorithm:run_id =>
-
-    r_out.hmset(mk_key('out', [qm, granularity, project, version, '.'.join(bases), '.'.join(pools)]), 
-            {k: json.dumps(v) for k, v in vals.iteritems()})
+    r_out.hmset(key, {k: json.dumps(v) for k, v in vals.iteritems()})
 
 RUNS = 30
 
@@ -237,9 +235,11 @@ def ALL(*args):
     return True
 
 POOLS = {
+    '0': ([], ALL),
     'B': (['dev'], lambda tidx, trigger_set: tidx not in trigger_set),
     'F': (['dev'], lambda tidx, trigger_set: tidx in trigger_set),
     'R': (['randoop.1'], ALL),
+    'E': (['evosuite-{0}-fse.{1}'.format(kind, id) for kind in ('branch', 'weakmutation', 'strongmutation') for id in xrange(1,11)], ALL),
 }
 
 def minimization(conn, r, rr, qm_name, project, version, bases, augs):
@@ -280,7 +280,7 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
 
     # 2. Get the list of tests with some coverage goals from base / augmenting pools
     def flatten(l):
-        return reduce(lambda a,b: a+b, l)
+        return reduce(lambda a,b: a+b, l, [])
 
     def pool_to_tests(pools, tp_idx=tp_idx, idx_tp=idx_tp):
         tests = []
@@ -317,7 +317,7 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
         return {k: v for k, v in tg_map.iteritems() if len(v) > 0}
 
     base_tg_map = get_tg_map(base_tests, base_idx_tp, relevant_tg_set)
-    get_all_tgs = lambda tg_map: reduce(lambda a, b: a | b, tg_map.values())
+    get_all_tgs = lambda tg_map: reduce(lambda a, b: a | b, tg_map.values(), set([]))
     get_all_tests = lambda tg_map: set(tg_map.keys())
     base_tgs = get_all_tgs(base_tg_map)
     print "Relevant_tgs {0}, Base tgs: {1}".format(*map(len, (relevant_tg_set, base_tgs)))
@@ -359,8 +359,10 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
 
 
     def timing(tests, idx_tp=idx_tp):
+        print tests
         tps = map(lambda t: idx_tp[t], tests)
         tps_sorted = sorted(tps, key=lambda (suite, i): suite)
+        total_time = 0
         for suite, i_it in groupby(tps_sorted, key=lambda(suite, i): suite):
             i_s = map(lambda (suite, i): i, i_it)
             if suite == 'dev':
@@ -374,21 +376,27 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
             def aggr(l):
                 if any(x == -1 for x in l):
                     raise Exception('bad timing for tests')
-
                 # let's go with average
                 return reduce(lambda a, b: a+b, l)/len(l)
             method_times_aggregate = [aggr(timings) for timings in method_times]
-            suite_time = reduce(lambda a, b: a+b, method_times_aggregate)
-            return suite_time
-
+            suite_time = reduce(lambda a, b: a+b, method_times_aggregate, 0)
+            total_time += suite_time
+        return total_time
 
     base_time = timing(base_tests, base_idx_tp)
     def timing_with_base(tests, idx_tp=idx_tp):
         return timing(tests, idx_tp) + base_time
 
-# row independent info
+    def reason(given):
+        if len(tts_with_unique_goals) > 0:
+            return 'U'
+        elif len(aug_additional_tts) == 0:
+            return 'X'
+        else:
+            return given
+    # row independent info
     info = (
-                len(relevant_tgs),
+                len(relevant_tgs), reason('-'),
                 len(base_triggers), len(base_tests), len(base_tgs), base_time,   # all of base suite
                 len(base_relevant_tts), len(base_relevant_tests), len(base_tgs), timing(base_relevant_tests, base_idx_tp), # relevant part of base suite
                 len(aug_tests), len(aug_triggers), timing(aug_tests), len(aug_tgs),                # all of augmentation pool
@@ -396,8 +404,10 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
                 len(aug_additional_tests), len(aug_additional_tts), timing(aug_additional_tests), len(aug_additional_tgs), # part of aug pool in addition to the base suite
             )
     print info
-    raise Exception('done')
-#   qm, granularity, project, version, base, select_from, algorithm, run_id, fault_detection, determined_by)
+
+    key = mk_key('out', [qm['name'], qm['granularity'], '.'.join(sorted(bases)), '.'.join(sorted(augs)), project, version])
+    save_row_independent(conn, key, info)
+    return
     minimization = lambda **kwargs: greedy_minimization(list(aug_additional_tests), aug_additional_tts, bit_map, timing_with_base, **kwargs)
     algo_params = [
         ('G', {}),
@@ -408,10 +418,9 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
     algos = [(name, lambda: minimization(**algo_param)) for (name, algo_param) in algo_params]
     for algo, fun in algos:
         results = fun()
-# vals should be a dict from {'GRE:1': (fault_detection, determined_by, # selected, # pool, # base, runtime, pool_time, base_time, }
-        save_rows(conn, qm['name'], qm['granularity'], project, version, bases, augs,
-                {'{algo}:{run}'.format(algo=algo, run=run_id+1): (result, determined_by if len(tts_with_unique_goals) == 0 else 'U',
-                    count,
+# vals should be a dict from {'GRE:1': (fault_detection, fd, reason) }
+        save_rows(conn, key, {'{algo}:{run}'.format(algo=algo, run=run_id+1):
+            (result, determined_by if len(tts_with_unique_goals) == 0 else 'U', count,
                     )
                         for (run_id, (determined_by, result, time, count)) in enumerate(results)}
         )
@@ -449,15 +458,21 @@ def main(options):
     rr = redis.StrictRedis.from_url(REDIS_URL_TG)
     conn = connect_db()
 
-    for qm in sorted(['line']):
-        for project, v in iter_versions(restrict_project=options.restrict_project, restrict_version=options.restrict_version):
-            print "----( %s %d --  %s )----" % (project, v, qm)
-            minimization(conn, r, rr, qm, project, v, ['B'], ['R','F'])
-            print
+    for qm in options.qms:
+        for bases in options.bases:
+            for pools in options.pools:
+                for project, v in iter_versions(restrict_project=options.restrict_project, restrict_version=options.restrict_version):
+                    print "----( %s %d --  %s )----" % (project, v, qm)
+                    minimization(conn, r, rr, qm, project, v, bases.split('.'), pools.split('.'))
+                    print
 
 if __name__ == "__main__":
     parser = OptionParser()
     parser.add_option("-p", "--project", dest="restrict_project", action="append", default=[])
     parser.add_option("-v", "--version", dest="restrict_version", action="append", default=[])
+    parser.add_option("-B", "--base", dest="bases", action="append", default=[])
+    parser.add_option("-P", "--pool", dest="pools", action="append", default=[])
+    parser.add_option("-M", "--metric", dest="qms", action="append", default=[])
     (options, args) = parser.parse_args(sys.argv)
     main(options)
+
