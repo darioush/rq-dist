@@ -426,7 +426,7 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
 
 def def_me(s):
     possible_tgs = s.split('-')
-    return {'name': s, 'granularity': 'file', 'fun': lambda x: any(x.startswith(p) for p in possible_tgs)}
+    return {'name': s, 'granularity': 'file', 'fun': lambda x: any(x.startswith('{0}:'.format(p)) for p in possible_tgs)}
 
 QMS = { s: def_me(s) for s in [
     'line',
