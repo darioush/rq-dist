@@ -4,9 +4,10 @@ import os
 
 KEYFILE = '/homes/gws/darioush/mykeypair.pem'
 
-REDIS_URL_RQ = 'redis://tern.cs.washington.edu:6379/0'
-REDIS_URL_XX = 'redis://tern.cs.washington.edu:6379/1'
-REDIS_URL_TG = 'redis://tern.cs.washington.edu:6380/0'
+REDIS_URL_RQ  = 'redis://tern.cs.washington.edu:6379/0'
+REDIS_URL_XX  = 'redis://tern.cs.washington.edu:6379/1'
+REDIS_URL_TG  = 'redis://tern.cs.washington.edu:6380/0'
+REDIS_URL_OUT = 'redis://tern.cs.washington.edu:6381/0'
 
 SCHOOL  = lambda host: host in set(('monarch', 'recycle', 'bicycle', 'tricycle', 'godwit', 'buffalo', 'nest', 'caribou'))
 MONARCH = lambda host: host in set(('monarch',))
