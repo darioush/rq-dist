@@ -223,7 +223,7 @@ def get_unique_goal_tts(tts, all_tests_set, tg_map):
 
 
 def def_me(s):
-    return {'name': s, 'granularity': 'file', 'fun': lambda s: s.startswith(s)}
+    return {'name': s, 'granularity': 'file', 'fun': lambda x: x.startswith(s)}
 
 
 def get_triggers_from_results(r, project, version, suite):
@@ -246,7 +246,8 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
     qm = QMS[qm_name]
 
     # 1. Get the testing goals that match the qm
-    relevant_tgs = filter(qm['fun'], rr.hkeys(mk_key('tg-i', [project, version])))
+    all_tgs = rr.hkeys(mk_key('tg-i', [project, version]))
+    relevant_tgs = filter(qm['fun'], all_tgs)
     relevant_tg_is = tg_i_s(rr, relevant_tgs, project, version)
     relevant_tg_set = set(relevant_tg_is)
 
@@ -356,10 +357,7 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
     bit_map = {k : to_bitvector(v) for k, v in aug_additional_tg_map.iteritems()}
     print "Built.."
 
-
-
     def timing(tests, idx_tp=idx_tp):
-        print tests
         tps = map(lambda t: idx_tp[t], tests)
         tps_sorted = sorted(tps, key=lambda (suite, i): suite)
         total_time = 0
@@ -395,6 +393,10 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
         else:
             return given
     # row independent info
+    suite_schema = lambda x: ['{0} {1}'.format(x,i) for i in ('triggers', 'tests', 'tgs', 'time')]
+    schema = [ 'Relevant tgs', 'Reason',] + \
+            suite_schema('Base') + suite_schema('Base relevant') + suite_schema('Aug') + suite_schema('Aug relevant') \
+            + suite_schema('Aug additional')
     info = (
                 len(relevant_tgs), reason('-'),
                 len(base_triggers), len(base_tests), len(base_tgs), base_time,   # all of base suite
@@ -403,6 +405,7 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
                 len(aug_relevant_tests), len(aug_relevant_tts), timing(aug_relevant_tests), len(aug_tgs), # relevant part of aug pool
                 len(aug_additional_tests), len(aug_additional_tts), timing(aug_additional_tests), len(aug_additional_tgs), # part of aug pool in addition to the base suite
             )
+    print ', '.join('{0}: {1}'.format(a,b) for a,b in (zip(schema, info)))
     print info
 
     key = mk_key('out', [qm['name'], qm['granularity'], '.'.join(sorted(bases)), '.'.join(sorted(augs)), project, version])
@@ -428,8 +431,8 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
 
 QMS = {
         'line': def_me('line'),
-        'line:cobertura': def_me('branch:cobertura'),
-        'line:codecover': def_me('branch:codecover'),
+        'line:cobertura': def_me('line:cobertura'),
+        'line:codecover': def_me('line:codecover'),
         'line:jmockit': def_me('line:jmockit'),
 
         'branch': def_me('branch'),
