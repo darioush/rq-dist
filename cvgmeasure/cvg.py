@@ -446,7 +446,7 @@ def time_tests(r, work_dir, input):
 
                 current_times = [msgpack.unpackb(val) if val is not None else [] for
                         val in r.hmget(mk_key('time', bundle), idxs)]
-                new_times = [[time] + current_time for (time, current_time) in zip(times, current_times)]
+                new_times = [[time] + ([] if delete else current_time) for (time, current_time) in zip(times, current_times)]
                 print times, current_times, method_names
                 assert len(idxs) == len(new_times)
                 r.hmset(mk_key('time', bundle), {idx: msgpack.packb(new_time, use_bin_type=True)
