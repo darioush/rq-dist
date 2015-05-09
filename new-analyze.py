@@ -33,6 +33,9 @@ RUNS = 100
 class MissingTTs(Exception):
     pass
 
+def bitmap_len(bit_map):
+    return len(bit_map.itervalues().next())
+
 def get_essential_tests(bit_map, tests):
     if len(tests) == 0:
         return []
@@ -50,71 +53,44 @@ def get_essential_tests(bit_map, tests):
 
     return [test for test in tests if (once_tgs & bit_map[test]).any()]
 
+def get_redundant_and_equal_tests(bit_map, tests):
+    b1 = bitarray('1')
+    inv_idx = defaultdict(set)
+    tg_cnt_inv_idx = defaultdict(set)
 
-subset_remember, eq_remember = None, None
-def reset_globals():
-    global subset_remember
-    global eq_remember
-    subset_remember = defaultdict(dict)
-    eq_remember = defaultdict(dict)
-
-
-def subset(t1, t2, ba1, ba2):
-    subset_remember[t1][t2] = subset_remember[t1].get(t2, ba1 & ba2 == ba1)
-    return subset_remember[t1][t2]
-
-def eq(t1, t2, ba1, ba2):
-    eq_remember[t1][t2] = eq_remember[t1].get(t2, ba1 == ba2)
-    return eq_remember[t1][t2]
-
-def get_redundant_tests(bit_map, tests):
     tg_counts = {test: bit_map[test].count() for test in tests}
-    sorted_tests = sorted(tests, key= lambda x: tg_counts[x])
+    sorted_tests = sorted(tests, key= lambda x: (tg_counts[x], x))
 
-    redundant_tests = []
-    for idx, i in enumerate(sorted_tests):
-        for jidx in xrange(len(sorted_tests)-1, idx, -1):
-            j = tests[jidx]
-            if tg_counts[i] < tg_counts[j] and subset(i, j, bit_map[i], bit_map[j]):
-                redundant_tests.append(i)
-                break
-    return redundant_tests
+    for t in tests:
+        for tg_idx in bit_map[t].itersearch(b1):
+            inv_idx[tg_idx].add(t)
+        tg_cnt_inv_idx[tg_counts[t]].add(t)
 
-
-def get_equal_tests(bit_map, tests):
-    tg_counts = {test: bit_map[test].count() for test in tests}
-    sorted_tests = sorted(tests, key= lambda x: tg_counts[x])
-
-    equal_tests = defaultdict(list) # { min_test -> set([eqs]) }
+    redundant_tests = set([])
+    equal_tests = []
     eq_tests = set([])
-    for idx, i in enumerate(sorted_tests):
-        if i in eq_tests:
+
+    for t in sorted_tests:
+        if t in redundant_tests or t in eq_tests:
             continue
-        for jidx in xrange(idx+1, len(sorted_tests)):
-            j = sorted_tests[jidx]
-            if tg_counts[i] < tg_counts[j]:
-                break
-            assert tg_counts[i] == tg_counts[j]
-            if eq(i, j, bit_map[i], bit_map[j]):
-                eq_tests.add(j)
-                equal_tests[i].append(j)
-    for k in equal_tests:
-        equal_tests[k].append(k)
 
-    redundant_tests = []
-    for eqs in equal_tests.values():
-        chosen_val = random.choice(eqs)
-        redundant_tests.extend(x for x in eqs if x != chosen_val)
-    return redundant_tests
+        supersets = None
+        for tg_idx in bit_map[t].itersearch(b1):
+            if supersets is None:
+                supersets = set(inv_idx[tg_idx])
+            else:
+                supersets &= inv_idx[tg_idx]
 
+        equals = supersets & tg_cnt_inv_idx[tg_counts[t]]
+        assert t in equals
+        strict_supersets = supersets - equals
 
-def combinator(f1, f2):
-    def combination(tg_map, tests):
-        result = f1(tg_map, tests)
-        remains = [t for t in tests if t not in result]
-        result.extend(f2(tg_map, remains))
-        return result
-    return combination
+        if len(strict_supersets) > 0:
+            redundant_tests.update(equals)
+        elif len(equals) > 1:
+            eq_tests.update(equals)
+            equal_tests.append(equals)
+    return redundant_tests, equal_tests
 
 
 def run_selection(bit_map, tests, initial_tests=[], verbose=False):
@@ -181,7 +157,7 @@ class Timer(object):
         return int(round(1000*self.time))
 
 
-def greedy_minimization(all_tests, tts, bit_map, timing=lambda x: None, redundants=lambda tgs, tests: [], essentials=lambda tgs, tests: []):
+def greedy_minimization(all_tests, tts, bit_map, timing=lambda x: None, redundants=lambda: set(), essentials=lambda tgs, tests: []):
         results = []
         tR, tE, tS = Timer(), Timer(), Timer()
         for i in xrange(RUNS):
@@ -189,7 +165,7 @@ def greedy_minimization(all_tests, tts, bit_map, timing=lambda x: None, redundan
                 random.seed(seed)
                 def do_one():
                     tR.start()
-                    redundant_set = set(redundants(bit_map, all_tests))
+                    redundant_set = redundants()
                     non_redundant_tests = [test for test in all_tests if test not in redundant_set]
                     tR.stop()
 
@@ -216,7 +192,7 @@ def greedy_minimization(all_tests, tts, bit_map, timing=lambda x: None, redundan
                     return (determined_by, len(selected_tts), len(selected), selected_tgs.count(), timing(selected))
 
                 results.append(do_one())
-                print '{0}{1}: {2} TCs {3}tgs {4}ms,\t'.format(*results[-1]),
+                print '{0}{1:2}: {2:>4}tcs {3:>5}tgs {4:>5}ms,'.format(*results[-1])
         print '...', len([r for _, r, _, _, _ in results if r > 0])
         print tR.msec, tE.msec, tS.msec
         return results
@@ -251,7 +227,6 @@ POOLS = {
 }
 
 def minimization(conn, r, rr, qm_name, project, version, bases, augs):
-    reset_globals()
     qm = QMS[qm_name]
 
     # 1. Get the testing goals that match the qm
@@ -420,11 +395,16 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
     key = mk_key('out', [qm['name'], qm['granularity'], '.'.join(sorted(bases)), '.'.join(sorted(augs)), project, version])
     save_row_independent(conn, key, info)
     minimization = lambda **kwargs: greedy_minimization(list(aug_additional_tests), aug_additional_tts, bit_map, timing_with_base, **kwargs)
+
+    redundants, eq_partition = get_redundant_and_equal_tests(bit_map, aug_additional_tests)
+    print redundants, eq_partition
+    choice = lambda eq_partition=eq_partition: reduce(lambda a, b: a | b, map(lambda s: s - set(random.sample(s, 1)), eq_partition), set())
+
     algo_params = [
         ('G', {}),
         ('GE', {'essentials': get_essential_tests}),
-        ('GRE', {'redundants': get_redundant_tests, 'essentials': get_essential_tests}),
-        ('GREQ', {'redundants': combinator(get_redundant_tests, get_equal_tests), 'essentials':get_essential_tests}),
+        ('GRE', {'redundants': lambda redundants=redundants: redundants , 'essentials': get_essential_tests}),
+        ('GREQ', {'redundants': lambda redundants=redundants: redundants | choice(), 'essentials':get_essential_tests}),
     ]
     algos = [(name, lambda algo_param=algo_param: minimization(**algo_param)) for (name, algo_param) in algo_params]
     for algo, fun in algos:
