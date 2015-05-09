@@ -28,13 +28,15 @@ def save_rows(r_out, key, vals):
     # parts of the hash: algorithm:run_id =>
     r_out.hmset(key, {k: json.dumps(v) for k, v in vals.iteritems()})
 
-RUNS = 30
+RUNS = 100
 
 class MissingTTs(Exception):
     pass
 
-
 def get_essential_tests(bit_map, tests):
+    if len(tests) == 0:
+        return []
+
     unseen_tgs = bitarray(len(bit_map.itervalues().next()))
     unseen_tgs.setall(True)
 
@@ -49,12 +51,18 @@ def get_essential_tests(bit_map, tests):
     return [test for test in tests if (once_tgs & bit_map[test]).any()]
 
 
-subset_remember = defaultdict(dict)
+subset_remember, eq_remember = None, None
+def reset_globals():
+    global subset_remember
+    global eq_remember
+    subset_remember = defaultdict(dict)
+    eq_remember = defaultdict(dict)
+
+
 def subset(t1, t2, ba1, ba2):
     subset_remember[t1][t2] = subset_remember[t1].get(t2, ba1 & ba2 == ba1)
     return subset_remember[t1][t2]
 
-eq_remember = defaultdict(dict)
 def eq(t1, t2, ba1, ba2):
     eq_remember[t1][t2] = eq_remember[t1].get(t2, ba1 == ba2)
     return eq_remember[t1][t2]
@@ -110,8 +118,12 @@ def combinator(f1, f2):
 
 
 def run_selection(bit_map, tests, initial_tests=[], verbose=False):
+    if len(tests) + len(initial_tests) == 0:
+        return [], bitarray(0)
+
     chosen_tests = list(initial_tests)
     remaining_tests = set(tests)
+
 
     chosen_tgs = bitarray(len(bit_map.itervalues().next()))
     chosen_tgs.setall(False)
@@ -149,7 +161,7 @@ def run_selection(bit_map, tests, initial_tests=[], verbose=False):
         chosen_tgs |= bit_map[choice]
         remaining_tests.remove(choice)
 
-    return chosen_tests
+    return chosen_tests, chosen_tgs
 
 import time
 class Timer(object):
@@ -187,12 +199,12 @@ def greedy_minimization(all_tests, tts, bit_map, timing=lambda x: None, redundan
                     tE.stop()
 
                     tS.start()
-                    selected = run_selection(bit_map, non_redundant_tests, initial_tests=essential_tests)
+                    selected, selected_tgs = run_selection(bit_map, non_redundant_tests, initial_tests=essential_tests)
                     selected_set = set(selected)
                     selected_tts = tts & selected_set
                     tS.stop()
-                    fault_detection = len(selected_tts) > 0
 
+                    fault_detection = len(selected_tts) > 0
                     if all(tt in redundant_set for tt in tts):
                         determined_by = 'R'
                         assert not fault_detection
@@ -201,13 +213,13 @@ def greedy_minimization(all_tests, tts, bit_map, timing=lambda x: None, redundan
                         assert fault_detection
                     else:
                         determined_by = 'S'
-                    return (determined_by, 1 if fault_detection else 0, timing(selected), len(selected))
+                    return (determined_by, len(selected_tts), len(selected), selected_tgs.count(), timing(selected))
 
                 results.append(do_one())
-                print '{0}{1} ({3} TCs {2} ms)'.format(*results[-1]),
-        print '...', len([r for _, r, _, _ in results if r > 0])
+                print '{0}{1}: {2} TCs {3}tgs {4}ms,\t'.format(*results[-1]),
+        print '...', len([r for _, r, _, _, _ in results if r > 0])
         print tR.msec, tE.msec, tS.msec
-        return  results
+        return results
 
 def get_unique_goal_tts(tts, all_tests_set, tg_map):
     non_tt_tg_union = set([])
@@ -239,6 +251,7 @@ POOLS = {
 }
 
 def minimization(conn, r, rr, qm_name, project, version, bases, augs):
+    reset_globals()
     qm = QMS[qm_name]
 
     # 1. Get the testing goals that match the qm
@@ -406,22 +419,25 @@ def minimization(conn, r, rr, qm_name, project, version, bases, augs):
 
     key = mk_key('out', [qm['name'], qm['granularity'], '.'.join(sorted(bases)), '.'.join(sorted(augs)), project, version])
     save_row_independent(conn, key, info)
-    return
     minimization = lambda **kwargs: greedy_minimization(list(aug_additional_tests), aug_additional_tts, bit_map, timing_with_base, **kwargs)
     algo_params = [
         ('G', {}),
-        ('GE', {'esessentials': get_essential_tests}),
+        ('GE', {'essentials': get_essential_tests}),
         ('GRE', {'redundants': get_redundant_tests, 'essentials': get_essential_tests}),
         ('GREQ', {'redundants': combinator(get_redundant_tests, get_equal_tests), 'essentials':get_essential_tests}),
     ]
-    algos = [(name, lambda: minimization(**algo_param)) for (name, algo_param) in algo_params]
+    algos = [(name, lambda algo_param=algo_param: minimization(**algo_param)) for (name, algo_param) in algo_params]
     for algo, fun in algos:
+        print algo
         results = fun()
 # vals should be a dict from {'GRE:1': (fault_detection, fd, reason) }
         save_rows(conn, key, {'{algo}:{run}'.format(algo=algo, run=run_id+1):
-            (result, determined_by if len(tts_with_unique_goals) == 0 else 'U', count,
-                    )
-                        for (run_id, (determined_by, result, time, count)) in enumerate(results)}
+            (
+                1 if selected_triggers > 0 else 0,
+                reason(determined_by),
+                selected_triggers, selected_count, selected_tgs, selected_time
+            )
+            for (run_id, (determined_by, selected_triggers, selected_count, selected_tgs, selected_time)) in enumerate(results)}
         )
 
 def def_me(s):
@@ -437,8 +453,7 @@ QMS = { s: def_me(s) for s in [
     'statement-line',
     'statement:codecover',
     'data',
-    'branch-loop-line',
-    'branch-loop-path-line',
+    'branch-loop-line', 'branch-loop-path-line',
     'mutcvg',
     'mutcvg-line',
     'mutant',
