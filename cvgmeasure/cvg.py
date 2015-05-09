@@ -432,6 +432,9 @@ def time_tests(r, work_dir, input):
                 print "- passed"
                 print 'Class setup/td: {0}/{1}'.format(cl_setup, cl_teardown)
 
+                method_times = [fail_overrides.get(method_name, time) for (time, method_name) in
+                        zip(method_times, method_names)]
+
                 if generated:
                     idxs = method_idxs
                     times = method_times
@@ -443,9 +446,9 @@ def time_tests(r, work_dir, input):
 
                 current_times = [msgpack.unpackb(val) if val is not None else [] for
                         val in r.hmget(mk_key('time', bundle), idxs)]
-                new_times = [[fail_overrides.get(method_name, time)] + current_time for (time, current_time, method_name)
-                    in zip(times, current_times, method_names)]
-                print new_times
+                new_times = [[time] + current_time for (time, current_time) in zip(times, current_times)]
+                print times, current_times, method_names
+                assert len(idxs) == len(new_times)
                 r.hmset(mk_key('time', bundle), {idx: msgpack.packb(new_time, use_bin_type=True)
                     for (idx, new_time) in zip(idxs, new_times)})
 
