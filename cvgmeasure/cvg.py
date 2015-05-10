@@ -461,7 +461,7 @@ def handle_run_tests(r, work_dir, input):
     project            = input['project']
     version            = input['version']
     suite              = input['suite']
-    passcnt            = input['passcnt']
+    passcnt            = input.get('passcnt', 3)
     tests              = input['tests']
     redo               = input.get('redo', False)
     timeout            = input.get('timeout', 1800)
