@@ -473,16 +473,24 @@ def handle_run_tests(r, work_dir, input):
     else:
         die_time = None
 
-    with checkout(project, version, work_dir / 'checkout'):
-        d4()('compile')
+#    with checkout(project, version, work_dir / 'checkout'):
+#        d4()('compile')
+#
+#        if generated:
+#            gen_tool, _, suite_id = suite.partition('.')
+#            fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
+#            if fetch_result != "ok":
+#                raise Exception('Unexpected return value from d4 fetch-generated-tests')
+#            d4()('compile', '-g')
 
-        if generated:
-            gen_tool, _, suite_id = suite.partition('.')
-            fetch_result = d4()('fetch-generated-tests', '-T', gen_tool, '-i', suite_id).strip()
-            if fetch_result != "ok":
-                raise Exception('Unexpected return value from d4 fetch-generated-tests')
-            d4()('compile', '-g')
-
+    with cache_or_checkout_and_coverage_setup_and_reset(
+           project,
+            version,
+            'compile-cache',
+            ['jmockit', project, version], suite,
+            work_dir / 'checkout',
+            exception_on_cache_miss=True,
+    ):
         pass_tc, fail_tc = 0, 0
         for counter, (tc, tc_idx) in enumerate(zip(tests, tn_i_s(r, tests, suite))):
             print "{tc} (= {idx}) ({counter}/{total})".format(tc=tc, idx=tc_idx,
