@@ -136,7 +136,7 @@ def tabulate_tgs(r, rr, work_dir, input):
                                     return [], []
                             is_it_empty = is_empty(tool, exec_result)
                             if is_it_empty:
-                                if tool == 'major' or tool == 'codecover':
+                                if tool in ('major' ,'codecover', 'jmockit'):
                                     print "-> Empty results for {0} noticed, ignoring this tool".format(tool)
                                     call_tgs = [tg for tg in call_tgs if not tg.endswith(tool)]
                                 else:

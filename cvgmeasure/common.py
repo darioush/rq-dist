@@ -1,3 +1,4 @@
+import time
 import re
 import importlib
 import json
@@ -6,7 +7,7 @@ import redis
 from contextlib import contextmanager
 from plumbum import local
 
-from cvgmeasure.conf import get_property_defaults, REDIS_URL_TG
+from cvgmeasure.conf import get_property_defaults, REDIS_URL_TG, REDIS_URL_OUT
 from cvgmeasure.d4 import refresh_dir, add_to_path
 
 def get_fun(fun_dotted):
@@ -62,6 +63,27 @@ def job_decorator_tg(f):
                 with connect_to_redis(redis_url) as r:
                     with connect_to_redis(REDIS_URL_TG) as rr:
                         return f(r, rr, work_dir_path, f_in, *args, **kwargs)
+
+    return decorated
+
+
+def job_decorator_out(f):
+    def decorated(input, f=f, *args, **kwargs):
+        f_in = json.loads(input)
+        work_dir, d4j_path, redis_url = map(
+                lambda property: get_property_defaults(property),
+                ['work_dir', 'd4j_path', 'redis_url']
+        )
+
+        work_dir_path = local.path(work_dir)
+        print "Working directory {0}".format(work_dir_path)
+
+        with refresh_dir(work_dir_path, cleanup=True):
+            with add_to_path(d4j_path):
+                with connect_to_redis(redis_url) as r:
+                    with connect_to_redis(REDIS_URL_TG) as rr:
+                        with connect_to_redis(REDIS_URL_OUT) as rrr:
+                            return f(r, rr, rrr, work_dir_path, f_in, *args, **kwargs)
 
     return decorated
 
@@ -327,4 +349,20 @@ def FF(r, project, i, tail_key, filter_arg, bundle):
         fails = r.smembers(mk_key('fail', ['exec', project, i, suite]))
         filtered = [item for item in filtered if item not in fails]
     return filtered
+
+class Timer(object):
+    def __init__(self):
+        self.time = 0
+        self.st_time = None
+
+    def start(self):
+        self.st_time = time.time()
+
+    def stop(self):
+        self.time += time.time() - self.st_time
+        self.st_time = None
+
+    @property
+    def msec(self):
+        return int(round(1000*self.time))
 
