@@ -332,7 +332,10 @@ def minimization(r, rr, conn, qm_name, project, version, bases, augs):
             else:
                 all_is = i_s
             method_times = [msgpack.unpackb(b) for b in r.hmget(mk_key('time', [project, version, suite]), all_is)]
-            #print zip(method_times, all_is)
+            bad_timings = [(time, i) for (time, i) in zip(method_times, all_is) if any(t < 0 for t in time)]
+            if bad_timings:
+                raise Exception('bad timing for tests: {project}, {version}, {suite} {idxs}'.format(
+                    project=project, version=version, suite=suite, idxs=' '.join(map(str, [i for (time, i) in bad_timings]))))
             def aggr(l):
                 if any(x == -1 for x in l):
                     raise Exception('bad timing for tests: {project}, {version}, {suite}'.format(

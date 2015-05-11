@@ -422,6 +422,7 @@ def time_tests(r, work_dir, input):
                         if len(_fails) > 0:
                             _method_times = [-1]
                             print '{0} fails even by itself...'.format(fail)
+                            put_into_set(r, 'fail', ['exec'] + bundle, idx_map[fail])
                         assert _run_cnt == 1
                         assert len(_method_times) == 1
                         cl_setups.append(_cl_setup)
