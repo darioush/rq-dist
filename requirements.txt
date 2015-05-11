@@ -1,5 +1,6 @@
 awscli==1.7.13
 bcdoc==0.13.0
+bitarray==0.8.1
 boto==2.36.0
 botocore==0.94.0
 click==3.3
