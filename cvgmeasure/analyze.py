@@ -8,6 +8,7 @@ from collections import defaultdict
 from itertools import groupby
 
 from cvgmeasure.common import mk_key, tg_i_s, tn_i_s, i_tn_s, Timer
+from cvgmeasure.s3 import get_file_from_cache_or_s3
 from cvgmeasure.consts import ALL_TGS
 
 def save_row_independent(r_out, key, val):
@@ -204,12 +205,38 @@ POOLS = {
 POOLS['G'] = (POOLS['R'][0] + POOLS['E'][0], ALL)
 
 
-def minimization(r, rr, conn, qm_name, project, version, bases, augs):
+def get_fn(tg):
+    kind, tool, fn, line, _ = tg.split(':', 4)
+    return fn
+
+def get_line(tg):
+    kind, tool, fn, line, _ = tg.split(':', 4)
+    return int(line)
+
+def in_range(l, r):
+    min_, _, max_ = r.partition(':')
+    min_, max_ = int(min_), int(max_)
+    return min_ <= l <= max_
+
+GRANS = {
+    'file': lambda tg, info: True,
+    'method': lambda tg, info: any(in_range(get_line(tg), r) for r in info[get_fn(tg)]['methods']),
+    'line': lambda tg, info: get_line(tg) in info[get_fn(tg)]['lines'],
+}
+
+
+def minimization(r, rr, conn, qm_name, granularity, project, version, bases, augs):
     qm = QMS[qm_name]
+
+    # 0. pull granularity info from cloud
+    fn = '{project}:{version}.txt'.format(project=project, version=version)
+    get_file_from_cache_or_s3('darioush-mm-files', '{project}:{version}'.format(project=project,version=version), fn)
+    with open(fn) as f:
+        granularity_info = json.loads(f.read())
 
     # 1. Get the testing goals that match the qm
     all_tgs = rr.hkeys(mk_key('tg-i', [project, version]))
-    relevant_tgs = filter(qm['fun'], all_tgs)
+    relevant_tgs = [tg for tg in filter(qm['fun'], all_tgs) if GRANS[granularity](tg, granularity_info)]
     relevant_tg_is = tg_i_s(rr, relevant_tgs, project, version)
     relevant_tg_set = set(relevant_tg_is)
 
@@ -374,7 +401,7 @@ def minimization(r, rr, conn, qm_name, project, version, bases, augs):
     print ', '.join('{0}: {1}'.format(a,b) for a,b in (zip(schema, info)))
     print info
 
-    key = mk_key('out', [qm['name'], qm['granularity'], '.'.join(sorted(bases)), '.'.join(sorted(augs)), project, version])
+    key = mk_key('out', [qm['name'], granularity, '.'.join(sorted(bases)), '.'.join(sorted(augs)), project, version])
     save_row_independent(conn, key, info)
     minimization = lambda **kwargs: get_do_one(aug_additional_tests, bit_map, **kwargs)
 
@@ -421,7 +448,7 @@ def minimization(r, rr, conn, qm_name, project, version, bases, augs):
 
 def def_me(s):
     possible_tgs = s.split('-')
-    return {'name': s, 'granularity': 'file', 'fun': lambda x: any(x.startswith('{0}:'.format(p)) for p in possible_tgs)}
+    return {'name': s, 'fun': lambda x: any(x.startswith('{0}:'.format(p)) for p in possible_tgs)}
 
 QMS = { s: def_me(s) for s in [
     'line',

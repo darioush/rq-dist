@@ -16,12 +16,13 @@ def main(options):
     rrr = redis.StrictRedis.from_url(REDIS_URL_OUT)
 
     for qm in options.qms:
-        for bases in options.bases:
-            for pools in options.pools:
-                for project, v in iter_versions(restrict_project=options.restrict_project, restrict_version=options.restrict_version):
-                    print "----( %s %d --  %s )----" % (project, v, qm)
-                    minimization(r, rr, rrr, qm, project, v, bases.split('.'), pools.split('.'))
-                    print
+        for gran in options.grans:
+            for bases in options.bases:
+                for pools in options.pools:
+                    for project, v in iter_versions(restrict_project=options.restrict_project, restrict_version=options.restrict_version):
+                        print "----( %s %d --  %s )----" % (project, v, qm)
+                        minimization(r, rr, rrr, qm, gran, project, v, bases.split('.'), pools.split('.'))
+                        print
 
 if __name__ == "__main__":
     parser = OptionParser()
@@ -30,6 +31,7 @@ if __name__ == "__main__":
     parser.add_option("-B", "--base", dest="bases", action="append", default=[])
     parser.add_option("-P", "--pool", dest="pools", action="append", default=[])
     parser.add_option("-M", "--metric", dest="qms", action="append", default=[])
+    parser.add_option("-G", "--granularity", dest="grans", action="append", default=[])
     (options, args) = parser.parse_args(sys.argv)
     main(options)
 

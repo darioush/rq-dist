@@ -24,5 +24,5 @@ def m(r, rr, rrr, work_dir, input):
         other_keys=[],
         split_at=-2, # split it at version
     ) as done:
-        minimization(r, rr, rrr, qm, project, version, bases, pools)
+        minimization(r, rr, rrr, qm, granularity, project, version, bases, pools)
     return "Success. :)"
