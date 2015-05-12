@@ -12,7 +12,7 @@ logger.setLevel(logging.WARNING)
 
 def main(fn, key_file):
     with open(fn) as f:
-        hosts = [item['public'] for item in json.loads(f.read())]
+        hosts = [item['public'] for item in json.loads(f.read())] #+ sys.argv[1:]
     print len(hosts)
 
     if sys.argv[1:]:

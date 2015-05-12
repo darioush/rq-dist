@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 import sys
 import redis
+import json
 
 from optparse import OptionParser
 
@@ -17,10 +18,17 @@ def main(options):
 
     for qm in options.qms:
         for gran in options.grans:
-            for bases in options.bases:
-                for pools in options.pools:
+            for experiment in options.experiments:
+                bases, _, pools = experiment.partition(',')
+                if options.print_only:
+                    print '''./main.py qb cvgmeasure.select.m {project} {version} -j '{json}' {additional}'''.format(
+                            project=''.join('-p {0}'.format(rp) for rp in options.restrict_project),
+                            version=''.join('-v {0}'.format(rv) for rv in options.restrict_version),
+                            json=json.dumps({'granularity': gran, 'bases': bases, 'pools': pools, "qm": qm}),
+                            additional=options.print_only)
+                else:
                     for project, v in iter_versions(restrict_project=options.restrict_project, restrict_version=options.restrict_version):
-                        print "----( %s %d --  %s )----" % (project, v, qm)
+                        print "----( %s %d --  %s : %s)----" % (project, v, qm, gran)
                         minimization(r, rr, rrr, qm, gran, project, v, bases.split('.'), pools.split('.'))
                         print
 
@@ -32,6 +40,9 @@ if __name__ == "__main__":
     parser.add_option("-P", "--pool", dest="pools", action="append", default=[])
     parser.add_option("-M", "--metric", dest="qms", action="append", default=[])
     parser.add_option("-G", "--granularity", dest="grans", action="append", default=[])
+    parser.add_option("-x", "--experiments", dest="experiments", action="append", default=[])
+    parser.add_option("-c", "--print-enqueue-cmds", dest="print_only", action="store", type="string", default=None)
+
     (options, args) = parser.parse_args(sys.argv)
     main(options)
 

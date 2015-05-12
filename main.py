@@ -9,7 +9,7 @@ from redis import StrictRedis
 from collections import defaultdict
 
 from cvgmeasure.common import mk_key, get_fun, doQ
-from cvgmeasure.conf import REDIS_URL_RQ, get_property
+from cvgmeasure.conf import REDIS_URL_RQ, get_property, REDIS_URL_TG
 from cvgmeasure.d4 import get_num_bugs, PROJECTS, iter_versions
 
 def single_run(fun_dotted, json_str, **kwargs):
@@ -22,8 +22,9 @@ def single_enqueue(fun_dotted, json_str, queue_name='default', timeout=10000, pr
 
 def enqueue_bundles(fun_dotted, json_str, queue_name='default',
         timeout=1800, print_only=False, restrict_project=None, restrict_version=None,
-        tail_keys=[], tail_key_descr=None, at_front=False, **kwargs):
+        tail_keys=[], tail_key_descr=None, at_front=False, check_key=None, **kwargs):
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
+    r = StrictRedis.from_url(get_property('redis_url'))
     for project, i in iter_versions(restrict_project, restrict_version):
         input = {'project': project, 'version': i}
         additionals = json.loads(json_str)
@@ -34,6 +35,9 @@ def enqueue_bundles(fun_dotted, json_str, queue_name='default',
         else:
             tail_keys_to_iterate = [[tk] for tk in tail_keys] # each of the tk's now counts, but singly
         for tail_key in tail_keys_to_iterate:
+            if check_key:
+                if r.hget(mk_key(check_key, [project, i]), ':'.join(tail_key)) is not None:
+                    continue
             input.update({} if tail_key_descr is None else {tail_key_descr: ':'.join(tail_key)})
             doQ(q, fun_dotted, json.dumps(input), timeout, print_only, at_front)
 
@@ -56,6 +60,9 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
 
     q = Queue(queue_name, connection=StrictRedis.from_url(REDIS_URL_RQ))
     r = StrictRedis.from_url(get_property('redis_url'))
+    rr = StrictRedis.from_url(REDIS_URL_TG)
+    R = defaultdict(lambda: r)
+    R['tgs'] = rr
 
     key_type = None # such hack
     if source_key.startswith('file:'):
@@ -94,55 +101,62 @@ def enqueue_bundles_sliced(fun_dotted, json_str, bundle_key,
             if alternate_key and check_key:
                 for alternate in alternates:
                     _key = mk_key(check_key, [alternate, project, i] + tail_key)
-                    already_computed[alternate] = set(mf(r, r.hkeys(_key), tail_key))
+                    already_computed[alternate] = set(mf(r, R[check_key].hkeys(_key), tail_key))
+
+            if check_key and not alternate_key:
+                _key = mk_key(check_key, [project, i] + tail_key)
+                already_computed = set(mf(r, R[check_key].hkeys(_key), tail_key))
+            else:
+                already_computed = set()
 
             if key_type == 'hash':
                 all_items = r.hkeys(key)
             elif key_type == 'file':
                 all_items = file_data[key]
+            elif key_type == 'list':
+                all_items = r.lrange(key, 0, -1)
+            elif key_type == 'none':
+                #print key
+                all_items = []
 
-            for j in xrange(bundle_offset, size, bundle_size):
-                if key_type == 'list':
-                    bundle = r.lrange(key, j, j+bundle_size-1)
-                elif key_type in ('hash', 'file'):
-                    bundle = all_items[j:j+bundle_size]
-                elif key_type == 'none':
-                    bundle = []
+            if filter_function is not None:
+                ff = get_fun(filter_function)
+                all_items = ff(r, project, i, tail_key, filter_arg, all_items)
 
-                if filter_function is not None:
-                    ff = get_fun(filter_function)
-                    bundle = ff(r, project, i, tail_key, filter_arg, bundle)
+            all_items = mf(r, all_items, tail_key)
 
+            def bundle_it(l, more_dict={}):
+                if len(l) == 0:
+                    return
 
-                if len(bundle) == 0:
-                    continue
+                for j in xrange(bundle_offset, size, bundle_size):
+                    if key_type in ('hash', 'file', 'list'):
+                        bundle = l[j:j+bundle_size]
+                    elif key_type == 'none':
+                        bundle = []
 
-                bundle = mf(r, bundle, tail_key)
+                    if len(bundle) == 0:
+                        continue
 
-                if alternate_key:
-                    for alternate in alternates:
-                        input = {'project': project, 'version': i, bundle_key: bundle, alternate_key: alternate}
-                        tk_input = {} if tail_key_descr is None else {tail_key_descr: ':'.join(tail_key)}
-                        additionals = json.loads(json_str)
-                        input.update(additionals)
-                        input.update(tk_input)
-                        if check_key:
-                            filtered_list = [item for item in bundle if item not in already_computed[alternate]]
-                            if len(filtered_list) == 0:
-                                #print "Skipping empty bundle"
-                                continue
-                            input[bundle_key] = filtered_list
-
-                        input.update({'timeout': timeout})
-                        doQ(q, fun_dotted, json.dumps(input), timeout, print_only, at_front)
-                else:
                     input = {'project': project, 'version': i, bundle_key: bundle}
                     tk_input = {} if tail_key_descr is None else {tail_key_descr: ':'.join(tail_key)}
                     additionals = json.loads(json_str)
-                    input.update(additionals)
                     input.update(tk_input)
+                    input.update(more_dict)
+                    input.update(additionals)
                     input.update({'timeout': timeout})
                     doQ(q, fun_dotted, json.dumps(input), timeout, print_only, at_front)
+
+            if alternate_key:
+                for alternate in alternates:
+                    if check_key:
+                        all_items = [item for item in all_items if item not in already_computed[alternate]]
+                    bundle_it(all_items, {alternate_key: alternate})
+            else:
+                if check_key:
+                    all_items = [item for item in all_items if item not in already_computed]
+                bundle_it(all_items)
+
 
 if __name__ == "__main__":
 
@@ -160,6 +174,7 @@ if __name__ == "__main__":
     parser.add_option("-k", "--bundle-key", dest="bundle_key", action="store", type="string")
     parser.add_option("-o", "--bundle-offset", dest="bundle_offset", action="store", type="int", default=0)
     parser.add_option("-m", "--bundle-max", dest="bundle_max", action="store", type="int")
+    parser.add_option("-r", "--redo", dest="redo", action="store_true", default=False)
 
     parser.add_option("-a", "--alternate",     dest="alternates", action="append")
     parser.add_option("-K", "--alternate-key", dest="alternate_key", action="store", type="string", default=None)
@@ -185,6 +200,11 @@ if __name__ == "__main__":
                 for tk in options.tail_keys]
 
         options.tail_keys = suites
+
+    if options.redo:
+        dic = json.loads(options.json_str)
+        dic.update({'redo': True})
+        options.json_str = json.dumps(dic)
 
     funs = {
         'single': single_run,

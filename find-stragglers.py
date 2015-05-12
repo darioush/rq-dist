@@ -59,6 +59,7 @@ class Straggler(Exception):
             kind=self.kind,
             fun_dotted=fun_dotted,
             bundle=':'.join(map(str, self.bundle)))
+        sys.stderr.write("# {0}\n".format(self.kind))
         sys.stderr.write((
                 'python main.py qb-slice {fun_dotted} ' +
                 ' -S file:{bundle_fn}  -M cvgmeasure.common.M ' +
@@ -91,6 +92,7 @@ def check_test_list(r, project, v, suite):
         fetch_result_key = mk_key('fetch', [project, v])
         fetch_result = r.hget(fetch_result_key, suite)
         if fetch_result not in ['missing', 'empty']:
+            print suite, fetch_result
             raise Straggler('-- {project}:{v}:{suite}'.format(project=project, v=v, suite=suite))
         else:
             print '-- {project}:{v}:{suite} has fetch result {fetch}'.format(project=project, v=v, suite=suite,
@@ -128,7 +130,7 @@ def get_fails(r, tool, project, v, suite, idxes, raise_fail_but_not_exec=True):
     failed_but_not_exec = [idx for idx in failed_idxes if idx not in failed_exec]
     if failed_but_not_exec:
         pass_key = mk_key('passcnt', [project, v, suite])
-        passes = defaultdict(int, zip(idxes, map(lambda x: 0 if x is None else int(x), r.hmget(pass_key, *failed_but_not_exec))))
+        passes = defaultdict(int, zip(failed_but_not_exec, [0 if x is None else int(x) for x in r.hmget(pass_key, *failed_but_not_exec)]))
         failed_but_known_to_pass = [idx for idx in failed_but_not_exec if passes[idx] > 0]
         if failed_but_known_to_pass:
             raise Straggler('FAIL_BUT_KNOWN_TO_PASS', [tool, project, v, suite], failed_but_known_to_pass,
@@ -192,7 +194,7 @@ def check_cvg(r, tool, project, v, suite, t_idxs, ts):
     print '- non-nil len: {0}'.format(len(non_nils))
     if non_nils:
         s3_list = list_from_s3('cvg-files', [tool, project, v, suite])
-        s3_tname_list = set([key.name.rpartition('/')[2] for key in s3_list])
+        s3_tname_list = set([key.name.rpartition('/')[2] for key in s3_list if key.size > 0])
         non_nils_missing_from_s3 = [(t_idx, t) for (t_idx, t) in non_nils if t not in s3_tname_list]
         if len(non_nils_missing_from_s3) != 0:
             raise Straggler('NON_NIL_CVG_BUT_NO_S3', [tool, project, v, suite],
@@ -203,8 +205,6 @@ def check_cvg(r, tool, project, v, suite, t_idxs, ts):
                         lambda bundle: b_pvs(bundle) + " -K cvg_tool -a {tool} -j '{{\"redo\": true}}'".format(tool=tool)
                     ))
         return "Cvg for in s3 : {0}".format(len(non_nils))
-
-
 
 
 def main():

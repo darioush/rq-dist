@@ -1,0 +1,1 @@
+python par.py |  parallel --colsep ' ' -j7  --joblog jl --bar ./write-to-csv.py -p Math -s {1} {2} {3} {4} {5} {6} {7} {8}
