@@ -375,8 +375,6 @@ def minimization(r, rr, conn, qm_name, granularity, project, version, bases, aug
         return total_time
 
     base_time = timing(base_tests, base_idx_tp)
-    def timing_with_base(tests, idx_tp=idx_tp):
-        return timing(tests, idx_tp) + base_time
 
     def reason(given):
         if len(tts_with_unique_goals) > 0:
@@ -421,7 +419,7 @@ def minimization(r, rr, conn, qm_name, granularity, project, version, bases, aug
         label=lambda :'{algo:<4} {info[cvrtg]:>4}tgs {info[reasons][S]:>3}S {info[reasons][R]:>3}R {info[reasons][E]:>3}E {info[nofd]:>3}F {time:>6}ms'.format(info=info, algo=algo, time=''.join(map(str,info['times'][-1:])))
         with click.progressbar(xrange(RUNS), label=label(), width=20) as bar:
             def pr(results):
-                rr = process_results(results, aug_additional_tts, timing_with_base)
+                rr = process_results(results, aug_additional_tts, timing)
                 determined_by, sel_tts, sel_cnt, sel_tgs, time = rr
                 info['cnt'] += 1
                 if sel_tts == 0:
