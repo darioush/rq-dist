@@ -21,7 +21,7 @@ from cvgmeasure.conf import get_property
 from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage
 from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_file, add_to_path, compile_if_needed, add_timeout
 from cvgmeasure.d4 import is_empty, denominator_empty, CoverageCalculationException
-from cvgmeasure.s3 import put_into_s3, get_compiled_from_s3, NoFileOnS3, get_file_from_cache_or_s3
+from cvgmeasure.s3 import put_into_s3, get_compiled_from_s3, NoFileOnS3, get_file_from_cache_or_s3, list_from_s3
 from cvgmeasure.consts import JAR_PATH, ALL_TGS
 
 
@@ -29,10 +29,10 @@ def jar():
     return local['java']['-jar', JAR_PATH]
 
 TOOL_TO_FILES = {
-        'cobertura': {'cobertura.ser': 'cobertura.ser'},
-        'codecover': {'coverage/codecover.xml': 'codecover.xml'},
-        'jmockit':   {'coverage/coverage.ser': 'coverage.ser'},
-        'major':     {'kill.csv': 'kill.csv', 'mutants.log': 'mutants.log'},
+        'cobertura': {'coverage/coverage_fails': 'coverage_fails', 'cobertura.ser': 'cobertura.ser'},
+        'codecover': {'coverage/coverage_fails': 'coverage_fails', 'coverage/test.clf': 'test.clf', 'coverage/empty.clf': 'empty.clf'},
+        'jmockit':   {'coverage/coverage_fails': 'coverage_fails', 'coverage/coverage.ser': 'coverage.ser'},
+        'major':     {'coverage/coverage_fails': 'coverage_fails', 'kill.csv': 'kill.csv', 'mutants.log': 'mutants.log'},
 }
 
 
@@ -48,6 +48,39 @@ def get_files(work_dir, tool, project, version, suite, t):
                 dst_f.write(inf.read())
                 inf.close()
 
+@job_decorator_tg
+def remove_redundant_files_s3(r, rr, work_dir, input):
+    tool        = input['tool']
+    project     = input['project']
+    version     = input['version']
+    suite       = input['suite']
+    redo        = input.get('redo', False)
+
+    bundle = [tool, project, version, suite]
+    with check_key(
+        rr,
+        'redundant-s3',
+        bundle,
+        redo=redo,
+        other_keys=[],
+    ) as done:
+        ts = list(list_from_s3('cvg-files', bundle))
+        orig_sum, upload_sum = 0, 0
+        for idx, key in enumerate(ts):
+            orig_size = key.size
+            prefix, _, t_name = key.name.rpartition('/')
+            print '{0}/{1} {2}'.format(idx+1, len(ts), t_name),
+            get_files(work_dir, tool, project, version, suite, t_name)
+            file_list = TOOL_TO_FILES[tool].values()
+            with get_tar_gz_file(file_list) as f:
+                upload_size = put_into_s3('cvg-files-min', bundle, t_name, f)
+            assert upload_size > 0
+            print '... upload  {0} -> {1}'.format(orig_size/1024, upload_size/1024) 
+            orig_sum += orig_size
+            upload_sum += upload_size
+
+        done({'orig': orig_sum, 'upload': upload_sum})
+        return "Success ({0}k -> {1}k : {2} tests)".format(orig_sum/1024, upload_sum/1024, len(ts))
 
 @job_decorator_tg
 def map_tgs(r, rr, work_dir, input):
