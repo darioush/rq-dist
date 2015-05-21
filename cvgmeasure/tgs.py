@@ -36,10 +36,10 @@ TOOL_TO_FILES = {
 }
 
 
-def get_files(work_dir, tool, project, version, suite, t):
+def get_files(work_dir, tool, project, version, suite, t, cache=True):
     key_name = '/'.join(map(str, [tool, project, version, suite, t]))
     tar_name = str(work_dir / '{tool}.tar.gz'.format(tool=tool))
-    get_file_from_cache_or_s3('cvg-files', key_name, tar_name)
+    get_file_from_cache_or_s3('cvg-files', key_name, tar_name, cache=cache)
     with tarfile.open(tar_name, 'r') as f:
         for src, dst in TOOL_TO_FILES[tool].iteritems():
             dst_fn = str(work_dir / dst)
@@ -70,7 +70,7 @@ def remove_redundant_files_s3(r, rr, work_dir, input):
             orig_size = key.size
             prefix, _, t_name = key.name.rpartition('/')
             print '{0}/{1} {2}'.format(idx+1, len(ts), t_name),
-            get_files(work_dir, tool, project, version, suite, t_name)
+            get_files(work_dir, tool, project, version, suite, t_name, cache=False)
             file_list = TOOL_TO_FILES[tool].values()
             with get_tar_gz_file(file_list) as f:
                 upload_size = put_into_s3('cvg-files-min', bundle, t_name, f)

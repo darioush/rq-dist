@@ -32,10 +32,13 @@ class NoFileOnS3(Exception):
     pass
 
 
-def get_file_from_cache_or_s3(bucket, fn, dst):
+def get_file_from_cache_or_s3(bucket, fn, dst, cache=True):
     hostname, _, _ = socket.gethostname().partition('.')
     look_dirs = get_property('s3_cache', hostname)
-    cache_dir = look_dirs[-1:]
+    if cache:
+        cache_dir = look_dirs[-1:]
+    else:
+        cache_dir = []
 
     for d in look_dirs:
         path = (LocalPath(d) / bucket / fn)
