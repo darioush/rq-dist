@@ -298,7 +298,7 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
                         file_list = get_coverage_files_to_save(cvg_tool)
                         try:
                             with get_tar_gz_file(file_list) as f:
-                                upload_size = put_into_s3('cvg-files', [cvg_tool, project, version, suite], tc, f)
+                                upload_size = put_into_s3('cvg-files-min', [cvg_tool, project, version, suite], tc, f)
                                 print "Uploaded {bytes} bytes to s3".format(bytes=upload_size)
                         except:
                             print "Could not upload to s3"
