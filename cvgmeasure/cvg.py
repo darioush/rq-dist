@@ -20,7 +20,7 @@ from cvgmeasure.common import put_list, put_into_hash, put_key
 from cvgmeasure.common import get_key, inc_key, put_into_set, del_from_set
 from cvgmeasure.conf import get_property
 from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage, get_tts
-from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_file, add_to_path, compile_if_needed, add_timeout
+from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_file, add_to_path, compile_if_needed, add_timeout, prep_for_mk_tar
 from cvgmeasure.d4 import is_empty, denominator_empty, CoverageCalculationException
 from cvgmeasure.s3 import put_into_s3, get_compiled_from_s3, NoFileOnS3
 
@@ -296,8 +296,9 @@ def handle_test_cvg_bundle(r, work_dir, input, input_key, check_key, non_empty_k
                         nonempty += 1
                         put_into_hash(r, non_empty_key, bundle, tc_idx, 1)
                         file_list = get_coverage_files_to_save(cvg_tool)
+                        prep_for_mk_tar(file_list)
                         try:
-                            with get_tar_gz_file(file_list) as f:
+                            with get_tar_gz_file(file_list.values()) as f:
                                 upload_size = put_into_s3('cvg-files-min', [cvg_tool, project, version, suite], tc, f)
                                 print "Uploaded {bytes} bytes to s3".format(bytes=upload_size)
                         except:

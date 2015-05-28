@@ -4,7 +4,7 @@ from collections import defaultdict
 
 from contextlib import contextmanager
 from plumbum import local
-from plumbum.cmd import rm, mkdir, ls
+from plumbum.cmd import rm, mkdir, ls, cp
 
 PROJECTS = ['Lang', 'Chart', 'Math', 'Closure', 'Time']
 
@@ -151,13 +151,23 @@ def denominator_empty(cvg_tool, results):
         return results['mt'] == 0
     return results['lt'] == 0
 
+
+TOOL_TO_FILES = {
+        'cobertura': {'coverage/coverage_fails': 'coverage_fails', 'cobertura.ser': 'cobertura.ser'},
+        'codecover': {'coverage/coverage_fails': 'coverage_fails', 'coverage/test.clf': 'test.clf', 'coverage/empty.clf': 'empty.clf'},
+        'jmockit':   {'coverage/coverage_fails': 'coverage_fails', 'coverage/coverage.ser': 'coverage.ser'},
+        'major':     {'coverage/coverage_fails': 'coverage_fails', 'kill.csv': 'kill.csv', 'mutants.log': 'mutants.log'},
+}
+
+
 def get_coverage_files_to_save(cvg_tool):
-    return {
-        'cobertura': ['cobertura.ser', 'coverage/'],
-        'codecover': ['coverage/'],
-        'jmockit'  : ['coverage/'],
-        'major'    : ['exclude.txt', 'kill.csv', 'mutants.log', '.mutation.log', 'summary.csv', 'testMap.csv', 'mml/'],
-    }[cvg_tool]
+    return TOOL_TO_FILES[cvg_tool]
+
+
+def prep_for_mk_tar(dic):
+    for k,v in dic.iteritems():
+        if k != v:
+            cp(k, v)
 
 
 @contextmanager

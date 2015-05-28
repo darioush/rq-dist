@@ -18,7 +18,7 @@ from cvgmeasure.common import tn_i_s, i_tn_s, tg_i_s
 from cvgmeasure.common import put_list, put_into_hash, put_key
 from cvgmeasure.common import get_key, inc_key, put_into_set, chunks
 from cvgmeasure.conf import get_property
-from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage
+from cvgmeasure.d4 import d4, checkout, refresh_dir, test, get_coverage, TOOL_TO_FILES
 from cvgmeasure.d4 import get_coverage_files_to_save, get_tar_gz_file, add_to_path, compile_if_needed, add_timeout
 from cvgmeasure.d4 import is_empty, denominator_empty, CoverageCalculationException
 from cvgmeasure.s3 import put_into_s3, get_compiled_from_s3, NoFileOnS3, get_file_from_cache_or_s3, list_from_s3
@@ -27,13 +27,6 @@ from cvgmeasure.consts import JAR_PATH, ALL_TGS
 
 def jar():
     return local['java']['-jar', JAR_PATH]
-
-TOOL_TO_FILES = {
-        'cobertura': {'coverage/coverage_fails': 'coverage_fails', 'cobertura.ser': 'cobertura.ser'},
-        'codecover': {'coverage/coverage_fails': 'coverage_fails', 'coverage/test.clf': 'test.clf', 'coverage/empty.clf': 'empty.clf'},
-        'jmockit':   {'coverage/coverage_fails': 'coverage_fails', 'coverage/coverage.ser': 'coverage.ser'},
-        'major':     {'coverage/coverage_fails': 'coverage_fails', 'kill.csv': 'kill.csv', 'mutants.log': 'mutants.log'},
-}
 
 
 def get_files(work_dir, tool, project, version, suite, t, cache=True):
