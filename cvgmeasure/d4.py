@@ -156,7 +156,7 @@ TOOL_TO_FILES = {
         'cobertura': {'coverage/coverage_fails': 'coverage_fails', 'cobertura.ser': 'cobertura.ser'},
         'codecover': {'coverage/coverage_fails': 'coverage_fails', 'coverage/test.clf': 'test.clf', 'coverage/empty.clf': 'empty.clf'},
         'jmockit':   {'coverage/coverage_fails': 'coverage_fails', 'coverage/coverage.ser': 'coverage.ser'},
-        'major':     {'coverage/coverage_fails': 'coverage_fails', 'kill.csv': 'kill.csv', 'mutants.log': 'mutants.log'},
+        'major':     {'kill.csv': 'kill.csv', 'mutants.log': 'mutants.log', '.mutation.log': '.mutation.log'},
 }
 
 
