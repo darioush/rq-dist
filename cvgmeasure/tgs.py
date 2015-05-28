@@ -48,8 +48,11 @@ def remove_redundant_files_s3(r, rr, work_dir, input):
     version     = input['version']
     suite       = input['suite']
     redo        = input.get('redo', False)
+    prefix      = input.get('prefix', None)
 
     bundle = [tool, project, version, suite]
+    if prefix:
+        bundle.append(prefix)
     with check_key(
         rr,
         'redundant-s3',
@@ -57,7 +60,8 @@ def remove_redundant_files_s3(r, rr, work_dir, input):
         redo=redo,
         other_keys=[],
     ) as done:
-        ts = list(list_from_s3('cvg-files', bundle))
+        ts = list(list_from_s3('cvg-files', [tool, project, version, suite], 
+            prefix=prefix if prefix else ''))
         orig_sum, upload_sum = 0, 0
         for idx, key in enumerate(ts):
             orig_size = key.size
